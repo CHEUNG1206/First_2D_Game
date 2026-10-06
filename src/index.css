@@ -60,9 +60,9 @@ h1, h2, p { margin: 0; }
 
 .hud {
   display: grid;
-  grid-template-columns: auto 1fr 1fr 1fr auto auto;
+  grid-template-columns: auto repeat(3, minmax(108px, 1fr)) auto auto;
   gap: 10px 12px;
-  align-items: end;
+  align-items: stretch;
   margin-bottom: 12px;
 }
 
@@ -87,10 +87,17 @@ h1, h2, p { margin: 0; }
   gap: 8px;
 }
 
-.bar-label { font-size: 12px; color: var(--ink-soft); }
+.bar {
+  background: #fff;
+  border: 3px solid var(--line);
+  border-radius: 10px;
+  padding: 4px 8px 6px;
+}
+
+.bar-label { font-size: 13px; color: var(--ink); font-weight: 700; }
 
 .bar-track {
-  height: 10px;
+  height: 12px;
   background: #efe0c4;
   border: 2px solid var(--line);
   border-radius: 99px;
@@ -140,7 +147,32 @@ h1, h2, p { margin: 0; }
   padding: 4px;
 }
 
-.sky { height: 100%; background: #8fd4ef; }
+.sky {
+  height: 100%;
+  background: #8fd4ef;
+  position: relative;
+}
+.sky::before {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffe36b;
+  border: 2px solid var(--line);
+  top: 6px;
+  left: 6px;
+}
+.window::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  background:
+    linear-gradient(var(--line), var(--line)) center / 3px 100% no-repeat,
+    linear-gradient(var(--line), var(--line)) center / 100% 3px no-repeat;
+  pointer-events: none;
+}
+.phase-night .sky::before { background: #f6f1d8; }
 .phase-afternoon .sky { background: #5eb0e6; }
 .phase-evening .sky { background: linear-gradient(#f3a15a, #f6d18a); }
 .phase-night .sky { background: #243056; }
@@ -416,7 +448,13 @@ blockquote span { display: block; font-size: 12px; font-weight: 700; color: #0e8
 
 .eyebrow { letter-spacing: 0.12em; color: var(--ink-soft); font-size: 13px; font-weight: 700; }
 h1 { font-size: clamp(36px, 6vw, 64px); font-weight: 900; line-height: 1.1; }
-.lede { max-width: 38rem; line-height: 1.7; font-size: 18px; }
+.lede {
+  max-width: 38rem;
+  line-height: 1.7;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+  padding: 0 8px;
+}
 .title-cast .chibi, .night-cast .chibi { width: 96px; }
 .title-actions { display: flex; gap: 12px; align-items: center; }
 

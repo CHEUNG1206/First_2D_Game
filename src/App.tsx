@@ -94,18 +94,18 @@ export default function App() {
               <div className="scene-column">
                 <Stage state={state} />
                 <Banner state={state} />
+                {state.screen === 'play' && (
+                  <ActionBar
+                    state={state}
+                    onAction={(id) => {
+                      play('ui')
+                      dispatch({ type: 'act', id })
+                    }}
+                  />
+                )}
               </div>
               <Monitor state={state} />
             </div>
-            {state.screen === 'play' && (
-              <ActionBar
-                state={state}
-                onAction={(id) => {
-                  play('ui')
-                  dispatch({ type: 'act', id })
-                }}
-              />
-            )}
           </div>
         )}
 
