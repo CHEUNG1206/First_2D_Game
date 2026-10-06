@@ -650,7 +650,7 @@ export function objectiveText(state: GameState): string {
 
 export function sceneCaption(state: GameState): string {
   if (state.location === 'store') return '便利商店的燈太白。店員的句子比人少。'
-  if (state.location === 'park') return '公園。慢跑的人會再講一次天氣。貓不會盤問你。'
+  if (state.location === 'park') return '公園。農人會再講一次天氣。貓不會盤問你。'
   if (state.location === 'office') return '公司。爸爸若在，這裡只有他聽得見。'
   if (state.location === 'school') return '學校。妹妹若在，這裡只有她聽得見。'
   if (state.location === 'street') return '街上。市場的人若在，才算在場。'

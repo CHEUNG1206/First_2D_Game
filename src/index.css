@@ -390,6 +390,7 @@ figcaption { font-size: 13px; font-weight: 700; }
 
 .who { align-items: center; }
 .who .chibi { width: 54px; animation: none; }
+.who .pixel-face { width: 48px; height: 48px; }
 .who p { color: var(--ink-soft); font-size: 13px; line-height: 1.4; }
 
 .here, .away {

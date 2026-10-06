@@ -1,17 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { SPRITES, SPRITE_W } from './pixels.ts'
+import { CAST, FACINGS, facingFrom, spriteUrl } from './pixels.ts'
 
-describe('pixel sprites', () => {
-  it('每個人都是一樣寬的點陣，而且長得不一樣', () => {
-    const ids = ['self', 'mom', 'dad', 'sister', 'clerk', 'jogger']
+describe('tang sprites', () => {
+  it('每個人都有八個方向，而且圖檔不共用', () => {
     const seen = new Set<string>()
-    for (const id of ids) {
-      const rows = SPRITES[id]
-      expect(rows, id).toBeTruthy()
-      expect(rows!.length).toBeGreaterThan(12)
-      for (const row of rows!) expect(row, `${id}:${row}`).toHaveLength(SPRITE_W)
-      seen.add(rows!.join(''))
+    for (const id of CAST) {
+      for (const facing of FACINGS) {
+        const url = spriteUrl(id, facing)
+        expect(url, `${id}/${facing}`).toMatch(/\.png/)
+        seen.add(url)
+      }
     }
-    expect(seen.size).toBe(ids.length)
+    expect(seen.size).toBe(CAST.length * FACINGS.length)
+  })
+
+  it('速度對上八個方向，站住時方向不變', () => {
+    expect(facingFrom(1, 0)).toBe('east')
+    expect(facingFrom(1, 1)).toBe('south-east')
+    expect(facingFrom(0, 1)).toBe('south')
+    expect(facingFrom(-1, 1)).toBe('south-west')
+    expect(facingFrom(-1, 0)).toBe('west')
+    expect(facingFrom(-1, -1)).toBe('north-west')
+    expect(facingFrom(0, -1)).toBe('north')
+    expect(facingFrom(1, -1)).toBe('north-east')
+    expect(facingFrom(0, 0, 'west')).toBe('west')
   })
 })

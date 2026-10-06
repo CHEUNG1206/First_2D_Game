@@ -17,7 +17,7 @@ import {
   zoneAt,
   type Spot,
 } from './town.ts'
-import { drawSprite } from './pixels.ts'
+import { drawSprite, facingFrom, type Facing } from './pixels.ts'
 
 interface Actor {
   id: string
@@ -31,6 +31,7 @@ interface Actor {
   bob: number
   scripted: boolean
   loop: number
+  facing: Facing
 }
 
 interface Floater {
@@ -52,7 +53,7 @@ const BARKS: Record<string, string> = {
   dad: '爸爸嗯了一聲，繼續看他的東西。',
   sister: '妹妹說：幹嘛，很閒喔。',
   clerk: '店員說：歡迎光臨。表情沒有接上一次。',
-  jogger: '慢跑的人又說了一次：今天天氣不錯。',
+  jogger: '農人又說了一次：今天天氣不錯。',
 }
 
 /**
@@ -77,6 +78,7 @@ export function World({
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
   const pos = useRef({ x: tileCenter({ x: 10, y: 7 }).x, y: tileCenter({ x: 10, y: 7 }).y })
+  const face = useRef<Facing>('south')
   const keys = useRef(new Set<string>())
   const target = useRef<Spot | null>(null)
   const path = useRef<Spot[]>([])
@@ -221,6 +223,7 @@ export function World({
   }
 
   function tryMove(dx: number, dy: number) {
+    face.current = facingFrom(dx, dy, face.current)
     const radius = 10
     if (!blocked(pos.current.x + dx, pos.current.y, radius)) pos.current.x += dx
     if (!blocked(pos.current.x, pos.current.y + dy, radius)) pos.current.y += dy
@@ -291,6 +294,7 @@ export function World({
         bob: 0,
         scripted: goal.scripted,
         loop: 0,
+        facing: 'south',
       })
     }
     actors.current = actors.current.filter((actor) => actor.id === 'jogger' || actor.id === 'clerk' || game.family.some((member) => member.id === actor.id))
@@ -301,6 +305,7 @@ export function World({
     const vy = center.y - actor.y
     const dist = Math.hypot(vx, vy) || 1
     const stepAmount = Math.min(amount, dist)
+    actor.facing = facingFrom(vx, vy, actor.facing)
     actor.x += (vx / dist) * stepAmount
     actor.y += (vy / dist) * stepAmount
   }
@@ -366,14 +371,21 @@ export function World({
       drawName(ctx, sign.text, sign.x * TILE + TILE / 2 - camX, sign.y * TILE - camY)
     }
     const people = [
-      ...actors.current.map((actor) => ({ id: actor.id, name: actor.name, x: actor.x, y: actor.y, bob: actor.bob })),
-      { id: 'self', name: '你', x: pos.current.x, y: pos.current.y, bob: performance.now() / 180 },
+      ...actors.current.map((actor) => ({
+        id: actor.id,
+        name: actor.name,
+        x: actor.x,
+        y: actor.y,
+        bob: actor.bob,
+        facing: actor.facing,
+      })),
+      { id: 'self', name: '你', x: pos.current.x, y: pos.current.y, bob: performance.now() / 180, facing: face.current },
     ].sort((a, b) => a.y - b.y)
     for (const person of people) {
       const hop = Math.round(Math.sin(person.bob) * 2)
-      drawSprite(ctx, person.id, person.x - camX, person.y - camY + 10, 2, hop)
-      drawName(ctx, person.name, person.x - camX, person.y - camY - 40)
-      if (askers.has(person.id)) drawBang(ctx, person.x - camX, person.y - camY - 56)
+      drawSprite(ctx, person.id, person.x - camX, person.y - camY, person.facing, hop)
+      drawName(ctx, person.name, person.x - camX, person.y - camY - 52)
+      if (askers.has(person.id)) drawBang(ctx, person.x - camX, person.y - camY - 68)
     }
     for (const floater of floaters.current) {
       ctx.globalAlpha = Math.max(0, floater.life)

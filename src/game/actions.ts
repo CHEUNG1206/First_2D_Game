@@ -78,12 +78,12 @@ export const ACTIONS: PlayerAction[] = [
   {
     id: 'park',
     label: '去公園',
-    detail: '貓不會盤問你。慢跑的人只會報天氣。',
+    detail: '貓不會盤問你。農人只會報天氣。',
     phases: ['morning'],
     location: 'park',
     energy: -12,
     humanity: 2,
-    result: '慢跑的人又說今天天氣不錯。貓坐上你的鞋子。兩件事都沒有懷疑值。',
+    result: '農人又說今天天氣不錯。貓坐上你的鞋子。兩件事都沒有懷疑值。',
   },
   {
     id: 'with_sister',

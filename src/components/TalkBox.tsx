@@ -92,7 +92,7 @@ function TalkSession({
   return (
     <section className="talk-dock" role="dialog" aria-modal="true" aria-labelledby="talk-title">
       <div className="talk-portrait">
-        <PixelFace id={scene.speakerId} scale={4} />
+        <PixelFace id={scene.speakerId} />
         <p className="badge">{provider ? PROVIDER_LABEL[provider] : scene.badge}</p>
       </div>
       <div className="talk-body">

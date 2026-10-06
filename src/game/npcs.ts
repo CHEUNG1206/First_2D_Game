@@ -17,7 +17,7 @@ export function createNpcs(): ScriptedNpc[] {
     },
     {
       id: 'jogger',
-      name: '慢跑的人',
+      name: '農人',
       role: '路人',
       location: 'park',
       lines: ['今天天氣不錯。', '今天天氣不錯。', '今天天氣不錯喔。'],

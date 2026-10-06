@@ -1,211 +1,87 @@
 /**
- * 上帝視角用的點陣小人。
- * 文字仍用一般字型，點陣只放在人身上，中文才不會糊成一顆顆方塊。
- * 每個字元是一格：o 外框、s 皮膚、h 頭髮、c 衣服、y 異色的眼睛。
+ * 地圖上的人用 PixelLab 匯出的 48×48 八方向圖。
+ * 圖檔來自使用者的角色庫，腳底幾乎貼著畫布下緣，所以把圖的底邊對準站立點。
+ * 方向名跟匯出檔一致：south 朝畫面下方。
  */
 
-export const SPRITE_W = 16
+export const SPRITE_SIZE = 48
 
-const SELF = [
-  '................',
-  '.....hhhhhh.....',
-  '....hhhhhhhh....',
-  '...ohssssssho...',
-  '..ohsseeysssho..',
-  '..ohssssssssho..',
-  '...ohssmmssho...',
-  '....osssssso....',
-  '.....oooooo.....',
-  '....occccccco...',
-  '...ocscccccsco..',
-  '...ocscccccsco..',
-  '....occcccco....',
-  '.....oszzso.....',
-  '.....os..so.....',
-  '....ob...bo.....',
-]
+export const FACINGS = [
+  'east',
+  'south-east',
+  'south',
+  'south-west',
+  'west',
+  'north-west',
+  'north',
+  'north-east',
+] as const
 
-const MOM = [
-  '......ohho......',
-  '.....ohhhho.....',
-  '....ohssssho....',
-  '...ohssssssho...',
-  '..ohhsseesssho..',
-  '..ohssssssssho..',
-  '...ohssmmssho...',
-  '....osssssso....',
-  '....oppppppo....',
-  '...opkcccckpo...',
-  '...opccccccpo...',
-  '...opsccccspo...',
-  '....oppppppo....',
-  '.....oszzso.....',
-  '.....os..so.....',
-  '....ob...bo.....',
-]
+export type Facing = (typeof FACINGS)[number]
 
-const DAD = [
-  '................',
-  '......hhhh......',
-  '.....ohhhhho....',
-  '....ohsssssho...',
-  '...ohsssssssho..',
-  '..ohsgwewgssho..',
-  '..ohssssssssho..',
-  '...ohssmmssho...',
-  '....osssssso....',
-  '....occccccco...',
-  '...occccccccco..',
-  '...ocscccccsco..',
-  '....occcccco....',
-  '.....oszzso.....',
-  '.....os..so.....',
-  '....ob...bo.....',
-]
+/** 遊戲裡的人對上哪一組圖。店員用綢緞婦人，繞圈的路人用扛鋤頭的農人。 */
+export const CAST = ['self', 'mom', 'dad', 'sister', 'clerk', 'jogger'] as const
 
-const SISTER = [
-  '.h............h.',
-  '.hh..ohhhho..hh.',
-  '..hhohsssshohh..',
-  '..ohsseessssho..',
-  '..ohssssssssho..',
-  '...ohssmmssho...',
-  '....osssssso....',
-  '....occccccco...',
-  '...ocscccccsco..',
-  '...occccccccco..',
-  '....occcccco....',
-  '.....oszzso.....',
-  '.....os..so.....',
-  '....ob...bo.....',
-  '................',
-  '................',
-]
+const files = import.meta.glob('./sprites/*/*.png', {
+  eager: true,
+  import: 'default',
+}) as Record<string, string>
 
-const CLERK = [
-  '.....pppppp.....',
-  '....pphhhpp.....',
-  '...ohssssssho...',
-  '..ohsseessssho..',
-  '..ohssssssssho..',
-  '...ohssmmssho...',
-  '....osssssso....',
-  '....occccccco...',
-  '...ocscccccsco..',
-  '...occccccccco..',
-  '....occcccco....',
-  '.....oszzso.....',
-  '.....os..so.....',
-  '....ob...bo.....',
-  '................',
-  '................',
-]
-
-const JOGGER = [
-  '.....pppppp.....',
-  '....phhhhhp.....',
-  '...ohssssssho...',
-  '..ohsseessssho..',
-  '..ohssssssssho..',
-  '...ohssmmssho...',
-  '....osssssso....',
-  '....occccccco...',
-  '...ocscccccsco..',
-  '....occcccco....',
-  '.....oszzso.....',
-  '.....os..so.....',
-  '....ob...bo.....',
-  '................',
-  '................',
-  '................',
-]
-
-export const SPRITES: Record<string, string[]> = {
-  self: SELF,
-  mom: MOM,
-  dad: DAD,
-  sister: SISTER,
-  clerk: CLERK,
-  jogger: JOGGER,
+const URLS: Record<string, string> = {}
+for (const [path, url] of Object.entries(files)) {
+  const match = path.match(/\.\/sprites\/([^/]+)\/([^/]+)\.png$/)
+  if (!match) continue
+  URLS[`${match[1]}/${match[2]}`] = url
 }
 
-const HAIR: Record<string, string> = {
-  self: '#5a3a2a',
-  mom: '#3a2a28',
-  dad: '#2a241c',
-  sister: '#6a3828',
-  clerk: '#2a2420',
-  jogger: '#243044',
+const cache = new Map<string, HTMLImageElement>()
+
+export function spriteUrl(id: string, facing: Facing): string {
+  return URLS[`${id}/${facing}`] ?? URLS['self/south'] ?? ''
 }
 
-const CLOTH: Record<string, string> = {
-  self: '#6aaa5a',
-  mom: '#fff6ea',
-  dad: '#3d6ea8',
-  sister: '#f0b429',
-  clerk: '#ef6f4e',
-  jogger: '#3aa89a',
+/**
+ * 速度向量換成八方向。畫面 y 向下，所以南方是正 dy。
+ * 沒有在動就留著上一個方向，避免停下來被甩回正面。
+ */
+export function facingFrom(dx: number, dy: number, previous: Facing = 'south'): Facing {
+  if (dx === 0 && dy === 0) return previous
+  const octant = Math.round(Math.atan2(dy, dx) / (Math.PI / 4))
+  return FACINGS[(octant + 8) % 8] ?? previous
 }
 
-const DARK: Record<string, string> = {
-  self: '#4e8a40',
-  mom: '#f3d7c4',
-  dad: '#2c5282',
-  sister: '#d4920d',
-  clerk: '#d4533a',
-  jogger: '#2a887c',
-}
-
-const ACCENT: Record<string, string> = {
-  self: '#63f0dc',
-  mom: '#e36b8a',
-  dad: '#d7ecff',
-  sister: '#ff8fb8',
-  clerk: '#f7f1e4',
-  jogger: '#f0b429',
-}
-
-function ink(id: string, pixel: string): string | null {
-  if (pixel === '.') return null
-  if (pixel === 'o' || pixel === 'e' || pixel === 'g') return '#2a1c14'
-  if (pixel === 's') return '#ffd2b4'
-  if (pixel === 'z') return '#f0b090'
-  if (pixel === 'm') return '#e07a6a'
-  if (pixel === 'w') return '#fffaf2'
-  if (pixel === 'b') return '#3a2a24'
-  if (pixel === 'h') return HAIR[id] ?? HAIR.self!
-  if (pixel === 'c') return CLOTH[id] ?? CLOTH.self!
-  if (pixel === 'k') return DARK[id] ?? DARK.self!
-  if (pixel === 'y') return id === 'self' ? '#63f0dc' : '#2a1c14'
-  if (pixel === 'p') return ACCENT[id] ?? ACCENT.mom!
-  return null
+function frame(id: string, facing: Facing): HTMLImageElement | null {
+  if (typeof Image === 'undefined') return null
+  const key = `${id}/${facing}`
+  let image = cache.get(key)
+  if (!image) {
+    image = new Image()
+    image.src = spriteUrl(id, facing)
+    cache.set(key, image)
+  }
+  return image
 }
 
 /**
  * 把人畫在腳的位置。hop 是走路時的上下，單位是螢幕像素。
- * imageSmoothing 要先關掉，放大才會維持方塊。
+ * scale 用整數，點陣才不會在半格上糊掉。
  */
 export function drawSprite(
   ctx: CanvasRenderingContext2D,
   id: string,
   x: number,
   y: number,
-  scale: number,
+  facing: Facing,
   hop: number,
+  scale = 1,
 ) {
-  const rows = SPRITES[id] ?? SPRITES.self!
-  const height = rows.length * scale
-  const left = Math.round(x - (SPRITE_W * scale) / 2)
-  const top = Math.round(y - height + hop)
+  const image = frame(id, facing)
+  if (!image || !image.complete || image.naturalWidth === 0) return
+  const size = SPRITE_SIZE * scale
+  const left = Math.round(x - size / 2)
+  const top = Math.round(y - size + hop)
   ctx.fillStyle = 'rgba(42,28,20,0.28)'
-  ctx.fillRect(Math.round(x - 8), Math.round(y - 3), 16, 4)
-  for (let row = 0; row < rows.length; row += 1) {
-    const line = rows[row] ?? ''
-    for (let col = 0; col < line.length; col += 1) {
-      const color = ink(id, line[col] ?? '.')
-      if (!color) continue
-      ctx.fillStyle = color
-      ctx.fillRect(left + col * scale, top + row * scale, scale, scale)
-    }
-  }
+  ctx.fillRect(Math.round(x - 10), Math.round(y - 3), 20, 4)
+  ctx.imageSmoothingEnabled = false
+  ctx.drawImage(image, left, top, size, size)
 }

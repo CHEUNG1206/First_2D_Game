@@ -1,7 +1,7 @@
-import { availableActions, dayLabel, moodFromSuspicion, objectiveText, PHASE_LABEL, sceneCaption } from '../game/engine.ts'
+import { availableActions, dayLabel, objectiveText, PHASE_LABEL, sceneCaption } from '../game/engine.ts'
 import { audienceFor, memberIsPresent } from '../game/family.ts'
 import type { ActionOffer, GameState } from '../game/types.ts'
-import { Chibi } from './sprites.tsx'
+import { PixelFace } from './PixelFace.tsx'
 
 function Bar({
   label,
@@ -88,19 +88,19 @@ export function Stage({ state }: { state: GameState }) {
       <p className="caption">{sceneCaption(state)}</p>
       <div className="cast">
         <figure>
-          <Chibi id="self" mood={state.humanity >= 40 ? 'ok' : 'watch'} />
+          <PixelFace id="self" />
           <figcaption>你</figcaption>
         </figure>
         {state.location === 'home' &&
           present.map((member) => (
             <figure key={member.id}>
-              <Chibi id={member.id} mood={moodFromSuspicion(member.suspicion)} />
+              <PixelFace id={member.id} />
               <figcaption>{member.role}</figcaption>
             </figure>
           ))}
         {state.location === 'store' && (
           <figure className={state.npcs.find((npc) => npc.id === 'clerk')?.glitching ? 'glitch' : ''}>
-            <Chibi id="clerk" />
+            <PixelFace id="clerk" />
             <figcaption>
               {state.npcs.find((npc) => npc.id === 'clerk')?.glitching ? '店員_03' : '店員'}
             </figcaption>
@@ -109,7 +109,7 @@ export function Stage({ state }: { state: GameState }) {
         {state.location === 'park' && (
           <>
             <figure className={state.npcs.find((npc) => npc.id === 'jogger')?.glitching ? 'glitch' : ''}>
-              <Chibi id="jogger" />
+              <PixelFace id="jogger" />
               <figcaption>路人</figcaption>
             </figure>
             <figure className="cat" aria-hidden="true">
@@ -135,7 +135,7 @@ export function Monitor({ state }: { state: GameState }) {
           return (
             <li key={member.id}>
               <div className="who">
-                <Chibi id={member.id} mood={moodFromSuspicion(member.suspicion)} />
+                <PixelFace id={member.id} scale={1} />
                 <div>
                   <strong>
                     {member.role} {member.name}
@@ -240,7 +240,7 @@ export function EventDialog({
     <div className="overlay">
       <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="event-title">
         <div className="dialog-head">
-          <Chibi id={event.speakerId} mood={event.askerId ? moodFromSuspicion(state.family.find((member) => member.id === event.askerId)?.suspicion ?? 0) : 'ok'} />
+          <PixelFace id={event.speakerId} />
           <div>
             <p className="badge">{event.badge}</p>
             <h2 id="event-title">
