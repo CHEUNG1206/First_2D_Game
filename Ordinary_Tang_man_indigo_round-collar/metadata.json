@@ -1,0 +1,36 @@
+{
+  "group_id": "53977576-adf6-47d3-bcd4-f32ec8c2de0c",
+  "states": [
+    {
+      "character": {
+        "id": "eb5b372d-99f0-4625-b428-3ec2650c34f5",
+        "name": "Idle",
+        "prompt": "Ordinary Tang man, indigo round-collar robe, dark belt, simple futou, cloth boots. cute pixel doll, slightly big head, short body, stubby limbs, black outline, south face, full body.",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-10-06T08:35:40.678683+00:00"
+      },
+      "folder": "Idle",
+      "frames": {
+        "rotations": {
+          "south": "Idle/rotations/south.png",
+          "south-east": "Idle/rotations/south-east.png",
+          "east": "Idle/rotations/east.png",
+          "north-east": "Idle/rotations/north-east.png",
+          "north": "Idle/rotations/north.png",
+          "north-west": "Idle/rotations/north-west.png",
+          "west": "Idle/rotations/west.png",
+          "south-west": "Idle/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-10-06T08:50:20.736694"
+}

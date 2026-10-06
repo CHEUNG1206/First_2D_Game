@@ -1,0 +1,36 @@
+{
+  "group_id": "d9d3289d-8107-486b-bf71-a482e7be1e37",
+  "states": [
+    {
+      "character": {
+        "id": "9d6a7cef-7750-4a99-8697-769c222a440a",
+        "name": "Idle",
+        "prompt": "Comfortable Tang woman, indigo high-waist skirt, cream blouse, soft bun, cotton sash, cloth shoes. cute pixel doll, slightly big head, short body, stubby limbs, black outline, south face, full body. ",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-10-06T08:39:59.755220+00:00"
+      },
+      "folder": "Idle",
+      "frames": {
+        "rotations": {
+          "south": "Idle/rotations/south.png",
+          "south-east": "Idle/rotations/south-east.png",
+          "east": "Idle/rotations/east.png",
+          "north-east": "Idle/rotations/north-east.png",
+          "north": "Idle/rotations/north.png",
+          "north-west": "Idle/rotations/north-west.png",
+          "west": "Idle/rotations/west.png",
+          "south-west": "Idle/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-10-06T08:50:22.691696"
+}

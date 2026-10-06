@@ -1,0 +1,36 @@
+{
+  "group_id": "9ba0a100-f727-4197-a291-a0c98f753ffd",
+  "states": [
+    {
+      "character": {
+        "id": "0667cb9b-5153-4fcb-ae83-d4c39e57abc7",
+        "name": "Idle",
+        "prompt": "cute pixel doll, slightly big head, short body, stubby limbs, Tang farmer, straw hat, short hemp tunic, hoe, muddy cloth shoes. Chibi, black outline, south face, full body.",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "mannequin",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-10-06T08:21:44.199898+00:00"
+      },
+      "folder": "Idle",
+      "frames": {
+        "rotations": {
+          "south": "Idle/rotations/south.png",
+          "south-east": "Idle/rotations/south-east.png",
+          "east": "Idle/rotations/east.png",
+          "north-east": "Idle/rotations/north-east.png",
+          "north": "Idle/rotations/north.png",
+          "north-west": "Idle/rotations/north-west.png",
+          "west": "Idle/rotations/west.png",
+          "south-west": "Idle/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-10-06T08:24:26.916794"
+}
