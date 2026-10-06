@@ -107,7 +107,7 @@ export const GRID: Tile[][] = buildGrid()
 
 export const HOTSPOTS: Hotspot[] = [
   { id: 'table', x: 5, y: 5, label: '餐桌', actions: ['breakfast', 'eat_alone', 'dinner', 'give_pudding'] },
-  { id: 'bed', x: 12, y: 4, label: '床', actions: ['sleep', 'journal', 'doze', 'confess'] },
+  { id: 'bed', x: 12, y: 4, label: '床', actions: ['sleep', 'journal', 'doze'] },
   { id: 'shelf', x: 12, y: 8, label: '相簿', actions: ['album'] },
   { id: 'sofa', x: 7, y: 9, label: '沙發', actions: ['tv'] },
   { id: 'sink', x: 4, y: 8, label: '水槽', actions: ['chores', 'dishes'] },

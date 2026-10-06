@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { availableActions, dueStory, objectiveText } from '../game/engine.ts'
+import { availableActions, objectiveText, waitingAskers } from '../game/engine.ts'
 import { memberZone } from '../game/family.ts'
 import type { GameState, LocationId } from '../game/types.ts'
 import {
@@ -17,6 +17,7 @@ import {
   zoneAt,
   type Spot,
 } from './town.ts'
+import { drawSprite } from './pixels.ts'
 
 interface Actor {
   id: string
@@ -44,15 +45,6 @@ interface Near {
   personId: string | null
   personName: string | null
   hotspotId: string | null
-}
-
-const PALETTE: Record<string, { hair: string; shirt: string }> = {
-  self: { hair: '#5a3a2a', shirt: '#6aaa5a' },
-  mom: { hair: '#3a2a28', shirt: '#e36b8a' },
-  dad: { hair: '#2c261f', shirt: '#3d6ea8' },
-  sister: { hair: '#4a2d24', shirt: '#f0b429' },
-  clerk: { hair: '#2a2420', shirt: '#ef6f4e' },
-  jogger: { hair: '#243044', shirt: '#5eb0a0' },
 }
 
 const BARKS: Record<string, string> = {
@@ -116,6 +108,8 @@ export function World({
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => {
+      const tag = (event.target as HTMLElement | null)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
       const key = event.key.toLowerCase()
       if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd', ' '].includes(key)) {
         event.preventDefault()
@@ -141,17 +135,9 @@ export function World({
     if (lockedRef.current) return
     const current = nearKey.current
     const [personId, hotspotId] = current.split('|')
-    const story = dueStory(stateRef.current)
-    if (personId && story?.askerId === personId) {
+    if (personId === 'mom' || personId === 'dad' || personId === 'sister') {
       onTalk(personId)
       return
-    }
-    if (personId === 'sister') {
-      const hang = availableActions(stateRef.current).find((action) => action.id === 'with_sister' && action.enabled)
-      if (hang) {
-        onAction('with_sister')
-        return
-      }
     }
     if (hotspotId) {
       const spot = HOTSPOTS.find((item) => item.id === hotspotId)
@@ -375,7 +361,7 @@ export function World({
         drawTile(ctx, x, y, x * TILE - camX, y * TILE - camY)
       }
     }
-    const story = dueStory(stateRef.current)
+    const askers = new Set(waitingAskers(stateRef.current))
     for (const sign of SIGNS) {
       drawName(ctx, sign.text, sign.x * TILE + TILE / 2 - camX, sign.y * TILE - camY)
     }
@@ -384,9 +370,10 @@ export function World({
       { id: 'self', name: '你', x: pos.current.x, y: pos.current.y, bob: performance.now() / 180 },
     ].sort((a, b) => a.y - b.y)
     for (const person of people) {
-      drawPerson(ctx, person.id, person.x - camX, person.y - camY, person.bob)
-      drawName(ctx, person.name, person.x - camX, person.y - camY - 28)
-      if (story?.askerId === person.id) drawBang(ctx, person.x - camX, person.y - camY - 46)
+      const hop = Math.round(Math.sin(person.bob) * 2)
+      drawSprite(ctx, person.id, person.x - camX, person.y - camY + 10, 2, hop)
+      drawName(ctx, person.name, person.x - camX, person.y - camY - 40)
+      if (askers.has(person.id)) drawBang(ctx, person.x - camX, person.y - camY - 56)
     }
     for (const floater of floaters.current) {
       ctx.globalAlpha = Math.max(0, floater.life)
@@ -420,12 +407,11 @@ export function World({
     target.current = spot
   }
 
-  const story = dueStory(state)
   const hotspot = HOTSPOTS.find((item) => item.id === near.hotspotId)
   const offers = availableActions(state).filter(
     (action) => action.enabled && !action.hidden && hotspot?.actions.includes(action.id),
   )
-  const canTalkStory = !!near.personId && story?.askerId === near.personId
+  const familyNear = near.personId === 'mom' || near.personId === 'dad' || near.personId === 'sister'
   const canHang = near.personId === 'sister' && availableActions(state).some((action) => action.id === 'with_sister' && action.enabled)
 
   return (
@@ -451,17 +437,17 @@ export function World({
         <button type="button" onPointerDown={() => keys.current.add('arrowright')} onPointerUp={() => keys.current.delete('arrowright')} onPointerLeave={() => keys.current.delete('arrowright')}>右</button>
       </div>
       <div className="interact-bar">
-        {canTalkStory && (
+        {familyNear && (
           <button type="button" className="action" onClick={() => onTalk(near.personId!)}>
             跟{near.personName}說話
           </button>
         )}
         {canHang && (
           <button type="button" className="action" onClick={() => onAction('with_sister')}>
-            拉妹妹去公園
+            跟妹妹鬧一下
           </button>
         )}
-        {!canTalkStory && near.personId && (
+        {!familyNear && near.personId && (
           <button type="button" className="action" onClick={pressInteract}>
             跟{near.personName}搭話
           </button>
@@ -471,7 +457,7 @@ export function World({
             {action.label}
           </button>
         ))}
-        {!canTalkStory && !canHang && !near.personId && offers.length === 0 && (
+        {!familyNear && !canHang && !near.personId && offers.length === 0 && (
           <span className="hint">方向鍵或點地走路。靠近人和家具會出現互動。</span>
         )}
         {localBark && <span className="hint">{localBark}</span>}
@@ -491,7 +477,12 @@ function drawTile(ctx: CanvasRenderingContext2D, x: number, y: number, px: numbe
     ctx.fillStyle = color
     ctx.fillRect(px, py, TILE, TILE)
   }
-  if (tile === 'grass') paint(alt ? '#7dce57' : '#6fbe4c')
+  if (tile === 'grass') {
+    paint(alt ? '#7dce57' : '#6fbe4c')
+    ctx.fillStyle = alt ? '#8ed86a' : '#63b344'
+    ctx.fillRect(px + 4, py + 8, 4, 4)
+    ctx.fillRect(px + 22, py + 20, 4, 4)
+  }
   else if (tile === 'path') paint(alt ? '#e7d3a4' : '#dcc392')
   else if (tile === 'road') paint(alt ? '#d8c39a' : '#cdb488')
   else if (tile === 'floor') paint(alt ? '#e8bc74' : '#deaf68')
@@ -560,32 +551,6 @@ function drawTile(ctx: CanvasRenderingContext2D, x: number, y: number, px: numbe
   if (tile === 'road' && y === 15) {
     ctx.fillStyle = '#f4efe4'
     ctx.fillRect(px + 6, py + 14, 10, 4)
-  }
-}
-
-function drawPerson(ctx: CanvasRenderingContext2D, id: string, x: number, y: number, bob: number) {
-  const look = PALETTE[id] ?? PALETTE.self!
-  const hop = Math.sin(bob) * 2
-  ctx.fillStyle = 'rgba(58,36,21,0.25)'
-  ctx.beginPath()
-  ctx.ellipse(x, y + 10, 10, 4, 0, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.fillStyle = look.shirt
-  ctx.fillRect(x - 8, y - 8 + hop, 16, 14)
-  ctx.fillStyle = '#ffd3b6'
-  ctx.beginPath()
-  ctx.arc(x, y - 14 + hop, 8, 0, Math.PI * 2)
-  ctx.fill()
-  ctx.fillStyle = look.hair
-  ctx.beginPath()
-  ctx.arc(x, y - 16 + hop, 8, Math.PI, 0)
-  ctx.fill()
-  ctx.fillStyle = '#2a1c14'
-  ctx.fillRect(x - 3, y - 15 + hop, 2, 2)
-  ctx.fillRect(x + 1, y - 15 + hop, 2, 2)
-  if (id === 'self') {
-    ctx.fillStyle = '#63f0dc'
-    ctx.fillRect(x + 1, y - 15 + hop, 2, 2)
   }
 }
 

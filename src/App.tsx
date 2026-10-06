@@ -2,15 +2,17 @@ import { useReducer, useState } from 'react'
 import { blip } from './game/audio.ts'
 import {
   acknowledgeNight,
+  applySpeech,
   beginWeek,
   chooseAction,
-  chooseChoice,
   createInitialState,
+  leaveTalk,
   talkTo,
   visit,
 } from './game/engine.ts'
-import type { GameState, LocationId } from './game/types.ts'
-import { Banner, EventDialog, Hud, Monitor } from './components/PlayView.tsx'
+import type { GameState, LocationId, SpeechJudgment } from './game/types.ts'
+import { Banner, Hud, Monitor } from './components/PlayView.tsx'
+import { TalkBox } from './components/TalkBox.tsx'
 import { World } from './world/World.tsx'
 import { EndingScreen, IntroScreen, NightScreen, Rules, TitleScreen } from './components/Screens.tsx'
 
@@ -20,7 +22,8 @@ type Act =
   | { type: 'act'; id: string }
   | { type: 'talk'; id: string }
   | { type: 'visit'; location: LocationId }
-  | { type: 'choice'; id: string }
+  | { type: 'speech'; judgment: SpeechJudgment }
+  | { type: 'leave' }
   | { type: 'night' }
   | { type: 'restart' }
 
@@ -37,8 +40,10 @@ function reducer(state: GameState, action: Act): GameState {
       return talkTo(state, action.id)
     case 'visit':
       return visit(state, action.location)
-    case 'choice':
-      return chooseChoice(state, action.id)
+    case 'speech':
+      return applySpeech(state, action.judgment)
+    case 'leave':
+      return leaveTalk(state)
     case 'night':
       return acknowledgeNight(state)
     case 'restart':
@@ -115,19 +120,22 @@ export default function App() {
                 onVisit={(location) => dispatch({ type: 'visit', location })}
                 onOpenFamily={() => setFamilyOpen((open) => !open)}
               />
-              <Banner state={state} />
+              {state.screen === 'play' && <Banner state={state} />}
             </div>
             {familyOpen && <Monitor state={state} />}
           </div>
         )}
 
         {state.screen === 'event' && (
-          <EventDialog
+          <TalkBox
             state={state}
-            onChoice={(id) => {
-              const choice = state.pendingEvent?.choices.find((item) => item.id === id)
-              play(choice?.metaLeak ? 'bad' : 'good')
-              dispatch({ type: 'choice', id })
+            onSpoken={(judgment) => {
+              play(judgment.metaLeak || judgment.suspicion > 0 ? 'bad' : 'good')
+              dispatch({ type: 'speech', judgment })
+            }}
+            onLeave={() => {
+              play('ui')
+              dispatch({ type: 'leave' })
             }}
           />
         )}

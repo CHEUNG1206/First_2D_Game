@@ -1,16 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import { overhearAmount, scoreSuspicion } from './formula.ts'
 import { memberIsPresent } from './family.ts'
+import { judgeOffline } from './judge.ts'
 import {
   acknowledgeNight,
+  applySpeech,
   availableActions,
   beginWeek,
   chooseAction,
   chooseChoice,
   createInitialState,
   dueStory,
+  leaveTalk,
   talkTo,
 } from './engine.ts'
+import type { SpeechRequest } from './types.ts'
 import type { GameState } from './types.ts'
 
 describe('scoreSuspicion', () => {
@@ -109,17 +113,71 @@ describe('night share', () => {
 })
 
 describe('store', () => {
-  it('一個人看見循環時，家人的懷疑不變', () => {
+  it('去便利商店不會打開選項，也不會改家人的懷疑', () => {
     let state = beginWeek(createInitialState())
-    state = talkTo(state, 'mom')
-    state = chooseChoice(state, 'welcome_mess')
-    state = chooseAction(state, 'album')
     const before = state.family.map((member) => member.suspicion)
     state = chooseAction(state, 'store_tea')
-    expect(state.pendingEvent?.id).toBe('store_glitch')
-    expect(state.pendingEvent?.askerId).toBeNull()
-    state = chooseChoice(state, 'glitch_tell')
+    expect(state.pendingEvent).toBeNull()
+    expect(state.screen).toBe('play')
+    expect(state.phase).toBe('morning')
     expect(state.family.map((member) => member.suspicion)).toEqual(before)
+  })
+})
+
+describe('daytime', () => {
+  it('吃飯不會把一天用掉，睡覺才會，早餐也不能刷', () => {
+    let state = beginWeek(createInitialState())
+    state = chooseAction(state, 'breakfast')
+    expect(state.screen).toBe('play')
+    expect(state.phase).toBe('morning')
+    const again = chooseAction(state, 'breakfast')
+    expect(again.energy).toBe(state.energy)
+    state = chooseAction(state, 'sleep')
+    expect(state.screen).toBe('night')
+  })
+
+  it('鍵盤說破兩個秘密會直接結束', () => {
+    let state = beginWeek(createInitialState())
+    state = talkTo(state, 'mom')
+    const request: SpeechRequest = {
+      speakerId: 'mom',
+      speakerName: '陳淑華',
+      role: '媽媽',
+      trait: '記得你怎麼吃。',
+      prompt: state.pendingEvent?.prompt ?? '',
+      playerText: '我是人工智慧，而且這個世界是虛擬的',
+      history: [],
+      suspicion: 16,
+      notes: [],
+      day: 1,
+    }
+    state = applySpeech(state, judgeOffline(request))
+    expect(state.ending).toBe('confessed')
+    expect(state.screen).toBe('ending')
+  })
+
+  it('普通的一句話留在對話裡，先去忙才回到鎮上', () => {
+    let state = beginWeek(createInitialState())
+    state = talkTo(state, 'mom')
+    const request: SpeechRequest = {
+      speakerId: 'mom',
+      speakerName: '陳淑華',
+      role: '媽媽',
+      trait: '記得你怎麼吃。',
+      prompt: state.pendingEvent?.prompt ?? '',
+      playerText: '蛋煎太老了啦，我超餓',
+      history: [],
+      suspicion: 16,
+      notes: [],
+      day: 1,
+    }
+    state = applySpeech(state, judgeOffline(request))
+    expect(state.screen).toBe('event')
+    expect(state.phase).toBe('morning')
+    const mom = state.family.find((member) => member.id === 'mom')!
+    expect(mom.suspicion).toBeLessThan(16)
+    state = leaveTalk(state)
+    expect(state.screen).toBe('play')
   })
 })
 

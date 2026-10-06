@@ -15,7 +15,7 @@ import {
 } from './formula.ts'
 import { gameLog } from './logger.ts'
 import { createNpcs, cycleNpc } from './npcs.ts'
-import { CONFESS_EVENT, pickAfterEvent, pickStory } from './events.ts'
+import { CONFESS_EVENT, idleTalk, pickStory, storyFor, storiesNow } from './events.ts'
 import type {
   ActionOffer,
   Banner,
@@ -27,18 +27,19 @@ import type {
   MemoryNote,
   Phase,
   PlayerAction,
+  SpeechJudgment,
 } from './types.ts'
 
 /**
- * 時段時鐘。
- * 白天只結算在場的家人；夜裡才漂移、才傳筆記。
+ * 白天不換時段。走路、吃飯、說話都留在同一天，同一件事一天只算一次。
+ * 只有睡覺才進入夜裡：漂移、傳筆記。
  * 路人只在拜訪時把台詞往下播，不進這兩個步驟。
  */
 
 const PHASE_ORDER: Phase[] = ['morning', 'afternoon', 'evening', 'night']
 
 export const PHASE_LABEL: Record<Phase, string> = {
-  morning: '上午',
+  morning: '白天',
   afternoon: '下午',
   evening: '傍晚',
   night: '夜裡',
@@ -88,8 +89,13 @@ export function beginWeek(state: GameState): GameState {
   })
 }
 
+function usedToday(state: GameState, id: string): boolean {
+  return !!state.flags[`did_${id}_d${state.day}`]
+}
+
 export function availableActions(state: GameState): ActionOffer[] {
   return ACTIONS.filter((action) => action.phases.includes(state.phase)).map((action) => {
+    if (usedToday(state, action.id)) return offer(action, false, null, true)
     if (action.maxEnergy != null && state.energy > action.maxEnergy) {
       return offer(action, false, null, true)
     }
@@ -124,10 +130,11 @@ function offer(action: PlayerAction, enabled: boolean, reason: string | null, hi
   }
 }
 
+/** 按鈕要這個人就在你身邊，而不是預設坐在客廳。 */
 function presentNow(state: GameState, id: string): boolean {
   const member = findMember(state, id)
   if (!member) return false
-  return memberIsPresent(member, { ...state, location: 'home', companionId: null })
+  return memberIsPresent(member, { ...state, companionId: null })
 }
 
 export function chooseAction(state: GameState, actionId: string): GameState {
@@ -147,18 +154,11 @@ export function chooseAction(state: GameState, actionId: string): GameState {
   }
   const next = applyAction(state, action)
   if (next.ending) return { ...next, screen: 'ending', pendingEvent: null }
-  const extra = pickAfterEvent(next)
-  if (extra) {
-    gameLog.info(`系統事件 ${extra.id}`)
-    return {
-      ...next,
-      screen: 'event',
-      pendingEvent: extra,
-      eventAdvances: true,
-      seenEvents: [...next.seenEvents, extra.id],
-    }
+  if (action.id === 'sleep') {
+    gameLog.info(`第${state.day}天去睡覺`)
+    return buildNight({ ...next, phase: 'night' })
   }
-  return advancePhase(next)
+  return next
 }
 
 export function chooseChoice(state: GameState, choiceId: string): GameState {
@@ -235,19 +235,66 @@ export function dueStory(state: GameState) {
   return pickStory(state)
 }
 
-/** 走到那個人旁邊再開口。對不上的人不會把別人的題目搶走。 */
+/** 走到那個人旁邊再開口。有劇情就進劇情，沒有就閒聊。時間不往前走。 */
 export function talkTo(state: GameState, actorId: string): GameState {
   if (state.screen !== 'play') return state
-  const story = pickStory(state)
-  if (!story || story.askerId !== actorId) return state
-  gameLog.info(`走上前跟 ${actorId} 說話：${story.id}`)
+  const story = storyFor(state, actorId)
+  if (story) {
+    gameLog.info(`走上前跟 ${actorId} 說話：${story.id}`)
+    return {
+      ...state,
+      screen: 'event',
+      pendingEvent: story,
+      eventAdvances: false,
+      seenEvents: [...state.seenEvents, story.id],
+    }
+  }
+  const member = findMember(state, actorId)
+  if (!member) return state
+  gameLog.info(`跟 ${actorId} 閒聊`)
   return {
     ...state,
     screen: 'event',
-    pendingEvent: story,
-    eventAdvances: story.consumesPhase,
-    seenEvents: [...state.seenEvents, story.id],
+    pendingEvent: idleTalk(member, state.day),
+    eventAdvances: false,
   }
+}
+
+/** 玩家打完的一句話。對話留在畫面上，方便繼續打下一句。 */
+export function applySpeech(state: GameState, spoken: SpeechJudgment): GameState {
+  if (state.screen !== 'event' || !state.pendingEvent) return state
+  const next = applyChoice(state, {
+    id: 'spoken',
+    text: spoken.reply,
+    result: spoken.reply,
+    suspicion: spoken.suspicion,
+    topic: spoken.topic,
+    metaLeak: spoken.metaLeak,
+    note: spoken.note,
+    humanity: spoken.humanity,
+    affection: spoken.affection,
+    ending: spoken.ending,
+  })
+  if (next.ending) {
+    gameLog.warn(`結局 ${next.ending}`)
+    return { ...next, screen: 'ending', pendingEvent: null }
+  }
+  return { ...next, screen: 'event', pendingEvent: state.pendingEvent }
+}
+
+/** 先去忙。不推進時間。 */
+export function leaveTalk(state: GameState): GameState {
+  if (state.screen !== 'event') return state
+  gameLog.info('離開對話')
+  return { ...state, screen: 'play', pendingEvent: null, eventAdvances: false }
+}
+
+/** 頭上該亮驚嘆號的人。 */
+export function waitingAskers(state: GameState): string[] {
+  if (state.screen !== 'play') return []
+  return storiesNow(state)
+    .map((story) => story.askerId)
+    .filter((id): id is string => !!id)
 }
 
 /** 人走進另一區。只改你站的地方，不推進時間。 */
@@ -332,6 +379,7 @@ function applyAction(state: GameState, action: PlayerAction): GameState {
   if (action.pocket) deltas.push({ label: '零用錢', value: action.pocket })
 
   const flags = { ...state.flags }
+  flags[`did_${action.id}_d${state.day}`] = true
   for (const key of action.setFlags ?? []) flags[key] = true
   for (const key of action.clearFlags ?? []) flags[key] = false
 
@@ -345,7 +393,7 @@ function applyAction(state: GameState, action: PlayerAction): GameState {
     energy,
     pocket,
     flags,
-    location: action.location,
+    location: action.keepLocation ? state.location : action.location,
     companionId: action.companionId ?? null,
     npcs: state.npcs.map((npc) => (npc.location === action.location ? cycleNpc(npc) : npc)),
     banner: { title: action.label, text: result, deltas },
@@ -588,18 +636,16 @@ function logSuspicion(family: FamilyMember[]) {
 }
 
 export function objectiveText(state: GameState): string {
-  const waiting = pickStory(state)
-  if (waiting && state.screen === 'play') {
-    return `${waiting.speakerRole}有話要說。走過去，靠在旁邊按互動。`
+  const waiting = storiesNow(state)
+  if (waiting.length > 0 && state.screen === 'play') {
+    const who = waiting.map((story) => story.speakerRole).join('、')
+    return `${who}有話想問。走過去，用自己的話打出來。想結束今天，再回到床上睡。`
   }
   const top = [...state.family].sort((a, b) => b.suspicion - a.suspicion)[0]
-  if (state.day >= 7) return '週日全家人都在家裡。傍晚那頓飯，每句話都有人旁聽。'
+  if (state.day >= 7) return '週日全家人都在家。沒有人在催時間。想聊就聊，想結束這一週就去睡覺。'
   if (top && top.suspicion >= 60) return `${top.role}快要說出口了。先讓這個人看見一個會嫌、會怕、會講錯的你。`
-  if (!state.seenEvents.includes('store_glitch') && state.day <= 4) {
-    return '找一個沒有家人同行的下午，去便利商店。看看不會學習的人。'
-  }
   if ((top?.suspicion ?? 0) >= 36) return `${top?.role}在記你。太完整和太空白都會再加一筆。`
-  return '像個會餓、會嫌、會記錯的人過完這一週。'
+  return '像個會餓、會嫌、會記錯的人過完這一週。街上的人不會學習。想結束今天就去睡覺。'
 }
 
 export function sceneCaption(state: GameState): string {
@@ -609,7 +655,7 @@ export function sceneCaption(state: GameState): string {
   if (state.location === 'school') return '學校。妹妹若在，這裡只有她聽得見。'
   if (state.location === 'street') return '街上。市場的人若在，才算在場。'
   if (state.phase === 'night') return '家裡的燈還亮著。筆記通常在你睡了之後才會合體。'
-  if (state.phase === 'morning') return '早餐的味道是媽媽的測驗。爸爸和妹妹還沒回到這張桌子。'
+  if (state.phase === 'morning') return '白天。媽媽在家，爸爸在公司，妹妹在學校。沒有人在倒數，睡了才算一天。'
   if (state.phase === 'afternoon') return '下午人少。不帶妹妹出門的話，沒有觀察者跟去。'
   return '傍晚客廳是滿的。一句話會被三個人聽見。'
 }

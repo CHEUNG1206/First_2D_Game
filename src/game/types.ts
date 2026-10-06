@@ -146,6 +146,8 @@ export interface PlayerAction {
   targetId?: string
   /** 出門這個動作本身被家裡的人看見。 */
   observedAt?: 'home' | 'destination'
+  /** 人已經站在現場。不要把邏輯位置再搬去別的建築。 */
+  keepLocation?: boolean
   companionId?: string
   requiresPresent?: string
   requiresFlag?: string
@@ -166,4 +168,39 @@ export interface ActionOffer {
   enabled: boolean
   reason: string | null
   hidden: boolean
+}
+
+export interface SpeechTurn {
+  role: 'family' | 'player'
+  text: string
+}
+
+/** 送給家人模型的這一輪。提示詞只描述處境，回答由玩家自己打。 */
+export interface SpeechRequest {
+  speakerId: string
+  speakerName: string
+  role: string
+  trait: string
+  prompt: string
+  playerText: string
+  history: SpeechTurn[]
+  suspicion: number
+  notes: string[]
+  day: number
+}
+
+/**
+ * 家人聽完一句話之後的判斷。
+ * suspicion 仍是乘權重之前的帶符號基礎值。
+ */
+export interface SpeechJudgment {
+  reply: string
+  suspicion: number
+  topic: Topic
+  metaLeak: boolean
+  note?: string
+  humanity: number
+  affection: number
+  ending?: EndingId
+  provider: 'ollama' | 'grok' | 'offline'
 }

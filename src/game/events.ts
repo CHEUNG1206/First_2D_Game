@@ -1,4 +1,4 @@
-import type { GameEvent, GameState } from './types.ts'
+import type { FamilyMember, GameEvent, GameState } from './types.ts'
 
 interface StoryDef {
   id: string
@@ -18,15 +18,16 @@ function latestNote(state: GameState): string | null {
 }
 
 /**
- * 一週的骨架。條件互斥，所以同一時段只會進一題。
- * 便利商店是動詞之後的系統事件，不在這份清單裡。
+ * 一週的骨架。同一天只留一題，而且不再綁死上午下午。
+ * 人在自己的班表上：媽媽在家、爸爸在公司、妹妹在學校。週日都在家。
+ * 開場白是固定的，回答改由玩家用鍵盤打，不從這三句選。
  */
 const STORY: StoryDef[] = [
   {
     id: 'welcome',
     priority: 10,
     consumesPhase: false,
-    when: (state) => state.day === 1 && state.phase === 'morning',
+    when: (state) => state.day === 1,
     build: () => ({
       id: 'welcome',
       title: '回來的第一餐',
@@ -37,7 +38,7 @@ const STORY: StoryDef[] = [
       speakerRole: '媽媽',
       badge: '會學習',
       prompt: '安安？站在門口幹嘛。早餐涼了。你以前都會先把鞋子踢歪，再來嫌蛋。',
-      inner: '她在核對進門習慣。太準像讀檔，太安靜像沒載入。',
+      inner: '她在核對進門習慣。用自己的話答。太準像讀檔，太安靜像沒載入。',
       choices: [
         {
           id: 'welcome_mess',
@@ -72,7 +73,7 @@ const STORY: StoryDef[] = [
     id: 'dad_photo',
     priority: 10,
     consumesPhase: true,
-    when: (state) => state.day === 2 && state.phase === 'evening',
+    when: (state) => state.day === 2,
     build: () => ({
       id: 'dad_photo',
       title: '校慶那張',
@@ -82,8 +83,8 @@ const STORY: StoryDef[] = [
       speakerName: '陳建國',
       speakerRole: '爸爸',
       badge: '會學習',
-      prompt: '爸爸把相簿推過來。「國小校慶這張，你當時哭什麼。還記得嗎？」客廳裡不只有他。',
-      inner: '正確答案在相簿裡。說得像清單，旁邊的人也聽得見。',
+      prompt: '公司桌上壓著一張校慶舊照。爸爸把相框轉過來。「你當時哭什麼。還記得嗎？」這個時段辦公室裡只有他。',
+      inner: '正確答案在相框裡。用自己的話。說得像清單，他就會記下來。',
       choices: [
         {
           id: 'photo_mess',
@@ -118,7 +119,7 @@ const STORY: StoryDef[] = [
     id: 'sister_robot',
     priority: 10,
     consumesPhase: true,
-    when: (state) => state.day === 3 && state.phase === 'afternoon',
+    when: (state) => state.day === 3,
     build: () => ({
       id: 'sister_robot',
       title: '玩笑',
@@ -128,8 +129,8 @@ const STORY: StoryDef[] = [
       speakerName: '陳小雨',
       speakerRole: '妹妹',
       badge: '會學習',
-      prompt: '妹妹趴在桌上看你。「同學說現在有東西長得跟人一樣。安安，你該不會是機器人吧？」她在笑。',
-      inner: '笑的問題最危險。接玩笑，不要接定義。',
+      prompt: '學校走廊。妹妹靠著窗看你。「同學說現在有東西長得跟人一樣。安安，你該不會是機器人吧？」她在笑。',
+      inner: '笑的問題最危險。用自己的話接玩笑，不要接定義。',
       choices: [
         {
           id: 'robot_joke',
@@ -165,7 +166,7 @@ const STORY: StoryDef[] = [
     id: 'flicker',
     priority: 10,
     consumesPhase: true,
-    when: (state) => state.day === 4 && state.phase === 'afternoon',
+    when: (state) => state.day === 4,
     build: () => ({
       id: 'flicker',
       title: '燈閃了',
@@ -175,8 +176,8 @@ const STORY: StoryDef[] = [
       speakerName: '陳小雨',
       speakerRole: '妹妹',
       badge: '會學習',
-      prompt: '電燈連閃兩下。妹妹抬起頭：「哇，是不是鬼。」這個時段家裡通常只有她。',
-      inner: '那是幀時間抖動。你看得懂。她只看得懂鬼。',
+      prompt: '教室的燈連閃兩下。妹妹抬起頭：「哇，是不是鬼。」這裡通常只有你們兩個。',
+      inner: '那是幀時間抖動。你看得懂。她只看得懂鬼。用自己的話。',
       choices: [
         {
           id: 'flicker_body',
@@ -211,7 +212,7 @@ const STORY: StoryDef[] = [
     id: 'parents_talk',
     priority: 20,
     consumesPhase: true,
-    when: (state) => state.day === 5 && state.phase === 'evening' && maxSuspicion(state) >= 34,
+    when: (state) => state.day === 5 && maxSuspicion(state) >= 34,
     build: (state) => {
       const note = latestNote(state)
       return {
@@ -224,9 +225,9 @@ const STORY: StoryDef[] = [
         speakerRole: '媽媽',
         badge: '會對答案',
         prompt: note
-          ? `你經過廚房。媽媽壓低聲音：「我記下來了，${note}。」爸爸說：「先觀察。」`
-          : '你經過廚房。媽媽壓低聲音：「他這週不一樣。」爸爸說：「先觀察，別打草驚蛇。」',
-        inner: '他們開始交換紀錄。現在走進客廳的方式，也會被寫進去。',
+          ? `媽媽背對著你講電話，壓低聲音：「我記下來了，${note}。」她頓了一下。「你爸說先觀察。」`
+          : '媽媽背對著你講電話：「他這週不一樣。」她聽了一會，只回：「先觀察，別打草驚蛇。」',
+        inner: '他們開始交換紀錄。你怎麼插話，也會被寫進去。用自己的話。',
         choices: [
           {
             id: 'talk_hungry',
@@ -262,7 +263,7 @@ const STORY: StoryDef[] = [
     id: 'soup',
     priority: 10,
     consumesPhase: true,
-    when: (state) => state.day === 5 && state.phase === 'evening' && maxSuspicion(state) < 34,
+    when: (state) => state.day === 5 && maxSuspicion(state) < 34,
     build: () => ({
       id: 'soup',
       title: '這碗湯',
@@ -273,7 +274,7 @@ const STORY: StoryDef[] = [
       speakerRole: '媽媽',
       badge: '會學習',
       prompt: '媽媽把湯推到你面前。「少鹽還是太多？你小時候喝到會皺鼻子。」',
-      inner: '她要的是皺鼻子，不是鹽的克數。',
+      inner: '她要的是皺鼻子，不是鹽的克數。用自己的話。',
       choices: [
         {
           id: 'soup_mess',
@@ -308,9 +309,7 @@ const STORY: StoryDef[] = [
     priority: 20,
     consumesPhase: true,
     when: (state) =>
-      state.day === 6 &&
-      state.phase === 'afternoon' &&
-      (state.family.find((member) => member.id === 'sister')?.notes.length ?? 0) > 0,
+      state.day === 6 && (state.family.find((member) => member.id === 'sister')?.notes.length ?? 0) > 0,
     build: (state) => {
       const sister = state.family.find((member) => member.id === 'sister')
       const note = sister?.notes[sister.notes.length - 1]?.text ?? '你有點怪'
@@ -323,8 +322,8 @@ const STORY: StoryDef[] = [
         speakerName: '陳小雨',
         speakerRole: '妹妹',
         badge: '會引用筆記',
-        prompt: `妹妹把椅子轉過來。「我一直記得一件事：${note}。所以你到底怎樣？」`,
-        inner: '道具不會拿出昨天的句子。她會。用玩笑把這頁翻過去。',
+        prompt: `妹妹在教室把椅子轉過來。「我一直記得一件事：${note}。所以你到底怎樣？」`,
+        inner: '道具不會拿出昨天的句子。她會。用自己的話把這頁翻過去。',
         choices: [
           {
             id: 'follow_joke',
@@ -361,9 +360,7 @@ const STORY: StoryDef[] = [
     priority: 10,
     consumesPhase: true,
     when: (state) =>
-      state.day === 6 &&
-      state.phase === 'afternoon' &&
-      (state.family.find((member) => member.id === 'sister')?.notes.length ?? 0) === 0,
+      state.day === 6 && (state.family.find((member) => member.id === 'sister')?.notes.length ?? 0) === 0,
     build: () => ({
       id: 'homework',
       title: '這題',
@@ -373,8 +370,8 @@ const STORY: StoryDef[] = [
       speakerName: '陳小雨',
       speakerRole: '妹妹',
       badge: '會學習',
-      prompt: '妹妹把習題推過來。「你以前超會。這題怎麼寫？不要裝酷。」',
-      inner: '沒有筆記可追。她還是會看你像不像以前那個會陪她耗的人。',
+      prompt: '妹妹把習題推到你手邊。「你以前超會。這題怎麼寫？不要裝酷。」走廊裡只有她在等。',
+      inner: '沒有筆記可追。她還是會看你像不像以前那個會陪她耗的人。用自己的話。',
       choices: [
         {
           id: 'hw_mess',
@@ -408,7 +405,7 @@ const STORY: StoryDef[] = [
     id: 'finale',
     priority: 30,
     consumesPhase: true,
-    when: (state) => state.day === 7 && state.phase === 'evening',
+    when: (state) => state.day === 7,
     build: () => ({
       id: 'finale',
       title: '週日的湯',
@@ -420,7 +417,7 @@ const STORY: StoryDef[] = [
       badge: '全員在場',
       prompt:
         '三個人都看著你。媽媽說：「這週你好像很用力地當自己。」爸爸補了一句：「我們沒有要審問。就是……你還好嗎？」妹妹踢了你的椅子一下。',
-      inner: '最後一輪。不要演講。不要解釋世界。餓、嫌、還在，就夠了。',
+      inner: '最後一輪。不要演講。不要解釋世界。用自己的話。餓、嫌、還在，就夠了。',
       choices: [
         {
           id: 'finale_human',
@@ -455,10 +452,43 @@ const STORY: StoryDef[] = [
   },
 ]
 
+/** 今天還沒收掉的題。一天通常只會留下一題。 */
+export function storiesNow(state: GameState): GameEvent[] {
+  return STORY.filter((story) => !state.seenEvents.includes(story.id) && story.when(state))
+    .sort((a, b) => b.priority - a.priority)
+    .map((story) => story.build(state))
+}
+
 export function pickStory(state: GameState): GameEvent | null {
-  const ready = STORY.filter((story) => !state.seenEvents.includes(story.id) && story.when(state))
-  ready.sort((a, b) => b.priority - a.priority)
-  return ready[0]?.build(state) ?? null
+  return storiesNow(state)[0] ?? null
+}
+
+/** 走上前才看得到的那一題。對不上的人不會把別人的題目搶走。 */
+export function storyFor(state: GameState, actorId: string): GameEvent | null {
+  return storiesNow(state).find((story) => story.askerId === actorId) ?? null
+}
+
+/** 沒有劇情時的閒聊。不寫進 seenEvents，同一天可以再開口。 */
+export function idleTalk(member: FamilyMember, day: number): GameEvent {
+  const prompt =
+    member.id === 'mom'
+      ? '媽媽擦著手看你。「站這麼近幹嘛。有話就說。」'
+      : member.id === 'dad'
+        ? '爸爸抬起眼。「嗯。你找我有事？」'
+        : '妹妹歪著頭。「幹嘛啦。很閒就直說。」'
+  return {
+    id: `chat_${member.id}_d${day}`,
+    title: '閒聊',
+    consumesPhase: false,
+    askerId: member.id,
+    speakerId: member.id,
+    speakerName: member.name,
+    speakerRole: member.role,
+    badge: '會學習',
+    prompt,
+    inner: '沒有預設答案。用自己的話。太順、太冷、太像說明書，都會被寫下來。',
+    choices: [],
+  }
 }
 
 /** 出門之後才會碰到的系統事件。一個人去就沒有觀察者。 */

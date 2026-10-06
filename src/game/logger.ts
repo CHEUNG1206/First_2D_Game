@@ -1,8 +1,9 @@
 /**
  * 瀏覽器裡的流程紀錄。
- * 示範沒有 Node 服務，所以不掛 winston 的檔案 transport；
+ * 瀏覽器這側不掛 winston 的檔案 transport；
  * 等級與呼叫方式和 winston 對齊：debug / info / warn / error。
  * 模擬的每個時段、結算、夜間交換都從這裡走。
+ * 家人的模型接口在開發伺服器上，金鑰不進這份紀錄。
  */
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
