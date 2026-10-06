@@ -1,4 +1,4 @@
-import type { FamilyMember, GameState, Phase } from './types.ts'
+import type { FamilyMember, GameState, LocationId, Phase } from './types.ts'
 
 const WEEKDAY_HOME: Record<string, Phase[]> = {
   mom: ['morning', 'evening', 'night'],
@@ -62,11 +62,22 @@ export interface AudienceMember {
   direct: boolean
 }
 
-/** 週日全員在家；出門時只有同行的那位聽得見。 */
+/**
+ * 這個人現在人在哪個區域。
+ * 週日全部留在家裡。平日按班表去公司、學校或市場，不會瞬移到你身邊。
+ */
+export function memberZone(member: FamilyMember, state: GameState): LocationId {
+  if (state.day >= 7) return 'home'
+  if (member.homePhases.includes(state.phase)) return 'home'
+  if (member.id === 'dad') return 'office'
+  if (member.id === 'sister') return 'school'
+  return 'street'
+}
+
+/** 跟你站在同一區，或你把人拉出來同行，才算聽得見。 */
 export function memberIsPresent(member: FamilyMember, state: GameState): boolean {
-  if (state.location !== 'home') return state.companionId === member.id
-  if (state.day >= 7) return true
-  return member.homePhases.includes(state.phase)
+  if (state.companionId === member.id) return true
+  return memberZone(member, state) === state.location
 }
 
 /**

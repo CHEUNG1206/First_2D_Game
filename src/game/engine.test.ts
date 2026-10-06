@@ -8,6 +8,8 @@ import {
   chooseAction,
   chooseChoice,
   createInitialState,
+  dueStory,
+  talkTo,
 } from './engine.ts'
 import type { GameState } from './types.ts'
 
@@ -93,6 +95,8 @@ function finishDayQuietly(state: GameState): GameState {
 describe('night share', () => {
   it('太完整的早餐會在夜裡傳給白天不在場的爸爸', () => {
     let state = beginWeek(createInitialState())
+    expect(state.screen).toBe('play')
+    state = talkTo(state, 'mom')
     state = chooseChoice(state, 'welcome_exact')
     state = finishDayQuietly(state)
     expect(state.screen).toBe('night')
@@ -107,6 +111,7 @@ describe('night share', () => {
 describe('store', () => {
   it('一個人看見循環時，家人的懷疑不變', () => {
     let state = beginWeek(createInitialState())
+    state = talkTo(state, 'mom')
     state = chooseChoice(state, 'welcome_mess')
     state = chooseAction(state, 'album')
     const before = state.family.map((member) => member.suspicion)
@@ -130,6 +135,10 @@ describe('week', () => {
   it('像人一樣過完七天可以留下', () => {
     const ended = play((state) => {
       if (state.screen === 'night') return acknowledgeNight(state)
+      if (state.screen === 'play') {
+        const waiting = dueStory(state)
+        if (waiting?.askerId) return talkTo(state, waiting.askerId)
+      }
       if (state.screen === 'event' && state.pendingEvent) {
         const safe = state.pendingEvent.choices.filter((choice) => !choice.metaLeak && !choice.ending)
         const pick = [...safe].sort((a, b) => a.suspicion - b.suspicion)[0]!
@@ -151,6 +160,10 @@ describe('week', () => {
   it('把世界說破會被家人合起來看穿', () => {
     const ended = play((state) => {
       if (state.screen === 'night') return acknowledgeNight(state)
+      if (state.screen === 'play') {
+        const waiting = dueStory(state)
+        if (waiting?.askerId) return talkTo(state, waiting.askerId)
+      }
       if (state.screen === 'event' && state.pendingEvent) {
         const meta = state.pendingEvent.choices.find((choice) => choice.metaLeak)
         const pick = meta ?? [...state.pendingEvent.choices].sort((a, b) => b.suspicion - a.suspicion)[0]!

@@ -3,7 +3,7 @@ export type Topic = 'routine' | 'emotion' | 'memory' | 'meta' | 'sensory' | 'pla
 
 export type Phase = 'morning' | 'afternoon' | 'evening' | 'night'
 
-export type LocationId = 'home' | 'store' | 'park'
+export type LocationId = 'home' | 'store' | 'park' | 'street' | 'office' | 'school'
 
 export type Screen = 'title' | 'intro' | 'play' | 'event' | 'night' | 'ending'
 

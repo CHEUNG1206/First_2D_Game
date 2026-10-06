@@ -215,25 +215,46 @@ export function advancePhase(state: GameState): GameState {
 export function beginPhase(state: GameState): GameState {
   let next: GameState = {
     ...state,
-    location: 'home',
     companionId: null,
     screen: 'play',
     pendingEvent: null,
   }
   if (next.phase === 'morning') next = grantAllowance(next)
   const story = pickStory(next)
-  if (!story) {
-    gameLog.info(`第${next.day}天 ${PHASE_LABEL[next.phase]} 自由行動`)
-    return next
-  }
-  gameLog.info(`劇情 ${story.id}（第${next.day}天 ${PHASE_LABEL[next.phase]}）`)
+  gameLog.info(
+    story
+      ? `第${next.day}天 ${PHASE_LABEL[next.phase]} ${story.speakerRole}在等你走過去`
+      : `第${next.day}天 ${PHASE_LABEL[next.phase]} 自由行動`,
+  )
+  return next
+}
+
+/** 這個時段有人想跟你說話。人還在原地，對話不會自動彈出。 */
+export function dueStory(state: GameState) {
+  if (state.screen !== 'play') return null
+  return pickStory(state)
+}
+
+/** 走到那個人旁邊再開口。對不上的人不會把別人的題目搶走。 */
+export function talkTo(state: GameState, actorId: string): GameState {
+  if (state.screen !== 'play') return state
+  const story = pickStory(state)
+  if (!story || story.askerId !== actorId) return state
+  gameLog.info(`走上前跟 ${actorId} 說話：${story.id}`)
   return {
-    ...next,
+    ...state,
     screen: 'event',
     pendingEvent: story,
     eventAdvances: story.consumesPhase,
-    seenEvents: [...next.seenEvents, story.id],
+    seenEvents: [...state.seenEvents, story.id],
   }
+}
+
+/** 人走進另一區。只改你站的地方，不推進時間。 */
+export function visit(state: GameState, location: GameState['location']): GameState {
+  if (state.screen !== 'play' || state.location === location) return state
+  gameLog.info(`走進 ${location}`)
+  return { ...state, location }
 }
 
 function grantAllowance(state: GameState): GameState {
@@ -567,8 +588,12 @@ function logSuspicion(family: FamilyMember[]) {
 }
 
 export function objectiveText(state: GameState): string {
+  const waiting = pickStory(state)
+  if (waiting && state.screen === 'play') {
+    return `${waiting.speakerRole}有話要說。走過去，靠在旁邊按互動。`
+  }
   const top = [...state.family].sort((a, b) => b.suspicion - a.suspicion)[0]
-  if (state.day >= 7) return '週日全家人都在。傍晚那頓飯，每句話都有人旁聽。'
+  if (state.day >= 7) return '週日全家人都在家裡。傍晚那頓飯，每句話都有人旁聽。'
   if (top && top.suspicion >= 60) return `${top.role}快要說出口了。先讓這個人看見一個會嫌、會怕、會講錯的你。`
   if (!state.seenEvents.includes('store_glitch') && state.day <= 4) {
     return '找一個沒有家人同行的下午，去便利商店。看看不會學習的人。'
@@ -580,6 +605,9 @@ export function objectiveText(state: GameState): string {
 export function sceneCaption(state: GameState): string {
   if (state.location === 'store') return '便利商店的燈太白。店員的句子比人少。'
   if (state.location === 'park') return '公園。慢跑的人會再講一次天氣。貓不會盤問你。'
+  if (state.location === 'office') return '公司。爸爸若在，這裡只有他聽得見。'
+  if (state.location === 'school') return '學校。妹妹若在，這裡只有她聽得見。'
+  if (state.location === 'street') return '街上。市場的人若在，才算在場。'
   if (state.phase === 'night') return '家裡的燈還亮著。筆記通常在你睡了之後才會合體。'
   if (state.phase === 'morning') return '早餐的味道是媽媽的測驗。爸爸和妹妹還沒回到這張桌子。'
   if (state.phase === 'afternoon') return '下午人少。不帶妹妹出門的話，沒有觀察者跟去。'

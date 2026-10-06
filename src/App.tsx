@@ -6,15 +6,20 @@ import {
   chooseAction,
   chooseChoice,
   createInitialState,
+  talkTo,
+  visit,
 } from './game/engine.ts'
-import type { GameState } from './game/types.ts'
-import { ActionBar, Banner, EventDialog, Hud, Monitor, Stage } from './components/PlayView.tsx'
+import type { GameState, LocationId } from './game/types.ts'
+import { Banner, EventDialog, Hud, Monitor } from './components/PlayView.tsx'
+import { World } from './world/World.tsx'
 import { EndingScreen, IntroScreen, NightScreen, Rules, TitleScreen } from './components/Screens.tsx'
 
 type Act =
   | { type: 'start' }
   | { type: 'intro' }
   | { type: 'act'; id: string }
+  | { type: 'talk'; id: string }
+  | { type: 'visit'; location: LocationId }
   | { type: 'choice'; id: string }
   | { type: 'night' }
   | { type: 'restart' }
@@ -28,6 +33,10 @@ function reducer(state: GameState, action: Act): GameState {
       return { ...state, introStep: state.introStep + 1 }
     case 'act':
       return chooseAction(state, action.id)
+    case 'talk':
+      return talkTo(state, action.id)
+    case 'visit':
+      return visit(state, action.location)
     case 'choice':
       return chooseChoice(state, action.id)
     case 'night':
@@ -42,6 +51,7 @@ function reducer(state: GameState, action: Act): GameState {
 export default function App() {
   const [state, dispatch] = useReducer(reducer, undefined, createInitialState)
   const [rulesOpen, setRulesOpen] = useState(false)
+  const [familyOpen, setFamilyOpen] = useState(false)
   const [soundOn, setSoundOn] = useState(true)
 
   function play(kind: 'ui' | 'good' | 'bad' | 'night') {
@@ -89,23 +99,25 @@ export default function App() {
         )}
 
         {(state.screen === 'play' || state.screen === 'event') && (
-          <div className="play">
-            <div className="stage-grid">
-              <div className="scene-column">
-                <Stage state={state} />
-                <Banner state={state} />
-                {state.screen === 'play' && (
-                  <ActionBar
-                    state={state}
-                    onAction={(id) => {
-                      play('ui')
-                      dispatch({ type: 'act', id })
-                    }}
-                  />
-                )}
-              </div>
-              <Monitor state={state} />
+          <div className={familyOpen ? 'world-layout with-family' : 'world-layout'}>
+            <div className="scene-column">
+              <World
+                state={state}
+                locked={state.screen !== 'play' || rulesOpen}
+                onAction={(id) => {
+                  play('ui')
+                  dispatch({ type: 'act', id })
+                }}
+                onTalk={(id) => {
+                  play('ui')
+                  dispatch({ type: 'talk', id })
+                }}
+                onVisit={(location) => dispatch({ type: 'visit', location })}
+                onOpenFamily={() => setFamilyOpen((open) => !open)}
+              />
+              <Banner state={state} />
             </div>
+            {familyOpen && <Monitor state={state} />}
           </div>
         )}
 

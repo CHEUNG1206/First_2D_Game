@@ -14,7 +14,7 @@ export function TitleScreen({ onStart, onRules }: { onStart: () => void; onRules
     <section className="title-screen">
       <p className="eyebrow">家庭模擬 · 七天觀察週</p>
       <h1>普通的一天</h1>
-      <p className="lede">你扮演家裡的陳安。只有家人真的在看你。街上的人只會把同一句話說完。</p>
+      <p className="lede">俯視小鎮。你自己走回家、便利商店、公園、公司和學校。只有家人會學習，街上的人只會把同一句話說完。</p>
       <div className="title-cast" aria-hidden="true">
         <Chibi id="mom" />
         <Chibi id="self" />
@@ -128,7 +128,7 @@ export function Rules({ onClose }: { onClose: () => void }) {
     <div className="overlay">
       <div className="dialog rules" role="dialog" aria-modal="true" aria-labelledby="rules-title">
         <h2 id="rules-title">這一週的規則</h2>
-        <p>上午、下午、傍晚、夜裡，每個時段做一件事。週日晚上是最後一輪。</p>
+        <p>這是一張俯視的小鎮。方向鍵或點地走路，靠近人和家具再按互動。每個互動推進一個時段。週日晚上是最後一輪。</p>
         <p>只有在場的家人聽得見。傍晚客廳通常是滿的。下午若一個人出門，沒有觀察者跟去。</p>
         <p>太完整、太空白，都會被記下來。把循環、場景、人工智慧說出口，緩衝也救不了。</p>
         <p>親近可以讓普通差錯輕一點，不能買通洩密。一起吃晚飯只加親近，不算把人安撫好。</p>
