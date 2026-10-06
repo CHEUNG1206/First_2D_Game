@@ -8,6 +8,7 @@ import {
   availableActions,
   beginWeek,
   chooseAction,
+  visit,
   chooseChoice,
   createInitialState,
   dueStory,
@@ -61,11 +62,14 @@ describe('overhearAmount', () => {
 describe('memberIsPresent', () => {
   const state = beginWeek(createInitialState())
 
-  it('週一上午只有媽媽在家', () => {
+  it('週一上午媽媽在一樓大堂，不在三樓', () => {
     const home = { ...state, screen: 'play' as const, location: 'home' as const, phase: 'morning' as const }
-    expect(memberIsPresent(home.family[0]!, home)).toBe(true)
+    expect(memberIsPresent(home.family[0]!, home)).toBe(false)
     expect(memberIsPresent(home.family[1]!, home)).toBe(false)
     expect(memberIsPresent(home.family[2]!, home)).toBe(false)
+    const hall = { ...home, location: 'store' as const }
+    expect(memberIsPresent(hall.family[0]!, hall)).toBe(true)
+    expect(memberIsPresent(hall.family[1]!, hall)).toBe(false)
   })
 
   it('週日全員在家，出門時只剩同行的人', () => {
@@ -127,6 +131,7 @@ describe('store', () => {
 describe('daytime', () => {
   it('吃飯不會把一天用掉，睡覺才會，早餐也不能刷', () => {
     let state = beginWeek(createInitialState())
+    state = visit(state, 'store')
     state = chooseAction(state, 'breakfast')
     expect(state.screen).toBe('play')
     expect(state.phase).toBe('morning')

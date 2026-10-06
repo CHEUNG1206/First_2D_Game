@@ -4,14 +4,18 @@ import { memberZone } from '../game/family.ts'
 import type { GameState, LocationId } from '../game/types.ts'
 import {
   COLS,
-  GRID,
+  CROWD,
+  FLOOR_NAME,
+  GRIDS,
   HOTSPOTS,
   INTERACT,
-  JOGGER_LOOP,
   ROWS,
+  SIGNS,
+  SPAWN,
   TILE,
   anchorFor,
   findPath,
+  floorOf,
   isSolid,
   tileCenter,
   zoneAt,
@@ -32,6 +36,8 @@ interface Actor {
   scripted: boolean
   loop: number
   facing: Facing
+  sprite: string
+  route: Spot[] | null
 }
 
 interface Floater {
@@ -52,7 +58,9 @@ const BARKS: Record<string, string> = {
   mom: '媽媽看了你一眼，還沒開口問大事。',
   dad: '爸爸嗯了一聲，繼續看他的東西。',
   sister: '妹妹說：幹嘛，很閒喔。',
-  clerk: '店員說：歡迎光臨。表情沒有接上一次。',
+  clerk: '常客說：老闆，老樣子。表情沒有接上一次。',
+  porter: '挑夫又喊了一次：讓一讓。',
+  crier: '說書的又從同一句開頭。',
   jogger: '農人又說了一次：今天天氣不錯。',
 }
 
@@ -77,8 +85,10 @@ export function World({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
-  const pos = useRef({ x: tileCenter({ x: 10, y: 7 }).x, y: tileCenter({ x: 10, y: 7 }).y })
+  const pos = useRef({ x: tileCenter(SPAWN).x, y: tileCenter(SPAWN).y })
   const face = useRef<Facing>('south')
+  const floorRef = useRef(2)
+  const [floor, setFloor] = useState(2)
   const keys = useRef(new Set<string>())
   const target = useRef<Spot | null>(null)
   const path = useRef<Spot[]>([])
@@ -176,7 +186,7 @@ export function World({
     moveActors(dt)
     const tileX = Math.floor(pos.current.x / TILE)
     const tileY = Math.floor(pos.current.y / TILE)
-    const nextZone = zoneAt(tileX, tileY)
+    const nextZone = zoneAt(tileX, tileY, floorRef.current)
     if (nextZone !== zone.current) {
       zone.current = nextZone
       onVisit(nextZone)
@@ -236,42 +246,64 @@ export function World({
       [x - radius, y + radius],
       [x + radius, y + radius],
     ]
-    return points.some(([px, py]) => isSolid(Math.floor(px! / TILE), Math.floor(py! / TILE)))
+    return points.some(([px, py]) => isSolid(Math.floor(px! / TILE), Math.floor(py! / TILE), floorRef.current))
   }
 
   function moveActors(dt: number) {
     const game = stateRef.current
-    const wanted = new Map<string, { name: string; color: string; spot: Spot; scripted: boolean }>()
+    const here = floorRef.current
+    const wanted = new Map<string, { name: string; color: string; spot: Spot; scripted: boolean; sprite: string; route: Spot[] | null }>()
     for (const member of game.family) {
-      const spot = anchorFor(member.id, memberZone(member, game))
+      const zone = memberZone(member, game)
+      if (floorOf(zone) !== here) continue
+      const spot = anchorFor(member.id, zone)
       if (!spot) continue
-      wanted.set(member.id, { name: member.role, color: member.color, spot, scripted: false })
+      wanted.set(member.id, { name: member.role, color: member.color, spot, scripted: false, sprite: member.id, route: null })
     }
-    const clerk = game.npcs.find((npc) => npc.id === 'clerk')
-    if (clerk) {
-      wanted.set('clerk', { name: clerk.glitching ? '店員_03' : '店員', color: '#ef6f4e', spot: anchorFor('clerk', 'store')!, scripted: true })
+    if (here === 0) {
+      const clerk = game.npcs.find((npc) => npc.id === 'clerk')
+      if (clerk) {
+        wanted.set('clerk', {
+          name: clerk.glitching ? '常客_03' : clerk.name,
+          color: '#ef6f4e',
+          spot: anchorFor('clerk', 'store')!,
+          scripted: true,
+          sprite: 'clerk',
+          route: null,
+        })
+      }
+      for (const walker of CROWD) {
+        wanted.set(walker.id, {
+          name: walker.name,
+          color: '#5eb0a0',
+          spot: walker.loop[0]!,
+          scripted: true,
+          sprite: walker.sprite,
+          route: walker.loop,
+        })
+      }
     }
-    const jog = JOGGER_LOOP[0]!
-    wanted.set('jogger', { name: '路人', color: '#5eb0a0', spot: jog, scripted: true })
 
     for (const actor of actors.current) {
       const goal = wanted.get(actor.id)
       if (!goal) continue
       actor.name = goal.name
-      if (actor.scripted && actor.id === 'jogger') {
-        const loopSpot = JOGGER_LOOP[actor.loop % JOGGER_LOOP.length]!
+      actor.sprite = goal.sprite
+      actor.route = goal.route
+      if (goal.route) {
+        const loopSpot = goal.route[actor.loop % goal.route.length]!
         const center = tileCenter(loopSpot)
         const dist = Math.hypot(center.x - actor.x, center.y - actor.y)
         if (dist < 6) actor.loop += 1
-        else stepToward(actor, center, 70 * dt)
+        else stepToward(actor, center, 62 * dt)
       } else if (actor.tx !== goal.spot.x || actor.ty !== goal.spot.y) {
         actor.tx = goal.spot.x
         actor.ty = goal.spot.y
         const from = { x: Math.floor(actor.x / TILE), y: Math.floor(actor.y / TILE) }
-        actor.path = findPath(from, goal.spot)
+        actor.path = findPath(from, goal.spot, here)
       }
       const stepSpot = actor.path[0]
-      if (stepSpot && !(actor.scripted && actor.id === 'jogger')) {
+      if (stepSpot && !goal.route) {
         const center = tileCenter(stepSpot)
         const dist = Math.hypot(center.x - actor.x, center.y - actor.y)
         if (dist < 4) actor.path.shift()
@@ -295,9 +327,15 @@ export function World({
         scripted: goal.scripted,
         loop: 0,
         facing: 'south',
+        sprite: goal.sprite,
+        route: goal.route,
       })
     }
-    actors.current = actors.current.filter((actor) => actor.id === 'jogger' || actor.id === 'clerk' || game.family.some((member) => member.id === actor.id))
+    actors.current = actors.current.filter((actor) => {
+      if (actor.id === 'clerk' || CROWD.some((walker) => walker.id === actor.id)) return here === 0
+      const member = game.family.find((item) => item.id === actor.id)
+      return !!member && floorOf(memberZone(member, game)) === here
+    })
   }
 
   function stepToward(actor: Actor, center: { x: number; y: number }, amount: number) {
@@ -325,6 +363,7 @@ export function World({
     let hotspotId: string | null = null
     let spotBest = INTERACT
     for (const spot of HOTSPOTS) {
+      if (spot.floor !== floorRef.current) continue
       const center = tileCenter(spot)
       const dist = Math.hypot(center.x - pos.current.x, center.y - pos.current.y)
       if (dist < spotBest) {
@@ -363,16 +402,17 @@ export function World({
     const y1 = Math.min(ROWS - 1, Math.floor((camY + height) / TILE) + 1)
     for (let y = y0; y <= y1; y += 1) {
       for (let x = x0; x <= x1; x += 1) {
-        drawTile(ctx, x, y, x * TILE - camX, y * TILE - camY)
+        drawTile(ctx, x, y, x * TILE - camX, y * TILE - camY, floorRef.current)
       }
     }
     const askers = new Set(waitingAskers(stateRef.current))
     for (const sign of SIGNS) {
+      if (sign.floor !== floorRef.current) continue
       drawName(ctx, sign.text, sign.x * TILE + TILE / 2 - camX, sign.y * TILE - camY)
     }
     const people = [
       ...actors.current.map((actor) => ({
-        id: actor.id,
+        id: actor.sprite,
         name: actor.name,
         x: actor.x,
         y: actor.y,
@@ -413,13 +453,23 @@ export function World({
     const worldX = event.clientX - rect.left + camX
     const worldY = event.clientY - rect.top + camY
     const spot = { x: Math.floor(worldX / TILE), y: Math.floor(worldY / TILE) }
-    if (isSolid(spot.x, spot.y)) return
+    if (isSolid(spot.x, spot.y, floorRef.current)) return
     const from = { x: Math.floor(pos.current.x / TILE), y: Math.floor(pos.current.y / TILE) }
-    path.current = findPath(from, spot)
+    path.current = findPath(from, spot, floorRef.current)
     target.current = spot
   }
 
-  const hotspot = HOTSPOTS.find((item) => item.id === near.hotspotId)
+  function goFloor(next: number, x: number, y: number) {
+    floorRef.current = next
+    setFloor(next)
+    pos.current = tileCenter({ x, y })
+    path.current = []
+    const nextZone = zoneAt(x, y, next)
+    zone.current = nextZone
+    onVisit(nextZone)
+  }
+
+  const hotspot = HOTSPOTS.find((item) => item.id === near.hotspotId && item.floor === floor)
   const offers = availableActions(state).filter(
     (action) => action.enabled && !action.hidden && hotspot?.actions.includes(action.id),
   )
@@ -430,7 +480,9 @@ export function World({
     <div className="world-wrap" ref={wrapRef}>
       <canvas ref={canvasRef} className="world" onClick={clickMap} aria-label="俯視小鎮，方向鍵移動，空白鍵互動" />
       <div className="map-hud">
-        <p>{objectiveText(state)}</p>
+        <p>
+          {FLOOR_NAME[floor]} · {objectiveText(state)}
+        </p>
         <button type="button" className="text-btn" onClick={onOpenFamily}>
           家人筆記
         </button>
@@ -464,6 +516,11 @@ export function World({
             跟{near.personName}搭話
           </button>
         )}
+        {hotspot?.stair != null && (
+          <button type="button" className="action" onClick={() => goFloor(hotspot.stair!, hotspot.x, hotspot.y)}>
+            {hotspot.label}
+          </button>
+        )}
         {offers.map((action) => (
           <button key={action.id} type="button" className={action.id === 'confess' ? 'action danger' : 'action'} onClick={() => onAction(action.id)}>
             {action.label}
@@ -482,8 +539,8 @@ function clampCam(value: number, max: number): number {
   return Math.max(0, Math.min(max, value))
 }
 
-function drawTile(ctx: CanvasRenderingContext2D, x: number, y: number, px: number, py: number) {
-  const tile = GRID[y]![x]!
+function drawTile(ctx: CanvasRenderingContext2D, x: number, y: number, px: number, py: number, floor: number) {
+  const tile = GRIDS[floor]![y]![x]!
   const alt = (x + y) % 2 === 0
   const paint = (color: string) => {
     ctx.fillStyle = color
@@ -499,12 +556,35 @@ function drawTile(ctx: CanvasRenderingContext2D, x: number, y: number, px: numbe
   else if (tile === 'road') paint(alt ? '#d8c39a' : '#cdb488')
   else if (tile === 'floor') paint(alt ? '#e8bc74' : '#deaf68')
   else if (tile === 'tile') paint(alt ? '#f4efe4' : '#e7e0d2')
+  else if (tile === 'void') paint('#1c140f')
   else if (tile === 'wall') {
-    paint('#8a5234')
-    ctx.fillStyle = '#f0d2a4'
+    const inn = x >= 14 && x <= 35 && y >= 4 && y <= 19
+    const red = floor === 0 && inn
+    const indigo = floor === 1
+    paint(red ? '#7a2e2a' : indigo ? '#3d4f74' : '#8a5234')
+    ctx.fillStyle = red ? '#f0d2a4' : indigo ? '#d5deee' : '#f0d2a4'
     ctx.fillRect(px, py + 6, TILE, TILE - 8)
-    ctx.fillStyle = '#6b3e24'
+    ctx.fillStyle = red ? '#f0b429' : indigo ? '#243656' : '#6b3e24'
     ctx.fillRect(px, py, TILE, 8)
+  }
+  else if (tile === 'stair') {
+    paint(floor === 1 ? '#d5deee' : '#e8bc74')
+    ctx.fillStyle = '#4a2c1a'
+    for (let step = 0; step < 4; step += 1) ctx.fillRect(px + 4, py + 6 + step * 6, 24, 3)
+  }
+  else if (tile === 'pillar') {
+    paint(floor === 0 ? '#e8bc74' : '#d5deee')
+    ctx.fillStyle = floor === 0 ? '#7a2e2a' : '#3d4f74'
+    ctx.fillRect(px + 10, py + 4, 12, 24)
+    ctx.fillStyle = '#f0b429'
+    ctx.fillRect(px + 8, py + 2, 16, 4)
+  }
+  else if (tile === 'lantern') {
+    paint(alt ? '#e7d3a4' : '#dcc392')
+    ctx.fillStyle = '#4a2c1a'
+    ctx.fillRect(px + 14, py + 10, 4, 16)
+    ctx.fillStyle = '#e23b2f'
+    ctx.fillRect(px + 8, py + 4, 16, 10)
   }
   else if (tile === 'water') paint(alt ? '#67c4e0' : '#54b4d4')
   else if (tile === 'tree') {
@@ -560,7 +640,7 @@ function drawTile(ctx: CanvasRenderingContext2D, x: number, y: number, px: numbe
     ctx.fillRect(px + 6, py + 20, 4, 6)
     ctx.fillRect(px + 22, py + 20, 4, 6)
   }
-  if (tile === 'road' && y === 15) {
+  if (tile === 'road' && y === 22) {
     ctx.fillStyle = '#f4efe4'
     ctx.fillRect(px + 6, py + 14, 10, 4)
   }
@@ -605,11 +685,3 @@ function drawBubble(ctx: CanvasRenderingContext2D, text: string, x: number, y: n
   ctx.textBaseline = 'middle'
   ctx.fillText(text, x, y - 4)
 }
-
-const SIGNS: { text: string; x: number; y: number }[] = [
-  { text: '陳家', x: 8, y: 3 },
-  { text: '便利商店', x: 24, y: 3 },
-  { text: '公司', x: 39, y: 3 },
-  { text: '學校', x: 39, y: 22 },
-  { text: '公園', x: 10, y: 20 },
-]

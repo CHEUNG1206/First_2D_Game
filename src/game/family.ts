@@ -1,7 +1,7 @@
 import type { FamilyMember, GameState, LocationId, Phase } from './types.ts'
 
 const WEEKDAY_HOME: Record<string, Phase[]> = {
-  mom: ['morning', 'evening', 'night'],
+  mom: ['evening', 'night'],
   dad: ['evening', 'night'],
   sister: ['afternoon', 'evening', 'night'],
 }
@@ -64,14 +64,14 @@ export interface AudienceMember {
 
 /**
  * 這個人現在人在哪個區域。
- * 週日全部留在家裡。平日按班表去公司、學校或市場，不會瞬移到你身邊。
+ * 週日全部留在三樓住家。平日媽媽守一樓大堂，爸爸在二樓帳房，妹妹上午在書塾。
  */
 export function memberZone(member: FamilyMember, state: GameState): LocationId {
   if (state.day >= 7) return 'home'
   if (member.homePhases.includes(state.phase)) return 'home'
   if (member.id === 'dad') return 'office'
   if (member.id === 'sister') return 'school'
-  return 'street'
+  return 'store'
 }
 
 /** 跟你站在同一區，或你把人拉出來同行，才算聽得見。 */

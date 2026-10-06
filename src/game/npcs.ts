@@ -8,10 +8,10 @@ export function createNpcs(): ScriptedNpc[] {
   return [
     {
       id: 'clerk',
-      name: '小吳',
-      role: '便利商店店員',
+      name: '常客',
+      role: '一樓酒客',
       location: 'store',
-      lines: ['歡迎光臨。', '歡迎光臨。', '塑膠袋需要嗎？'],
+      lines: ['老闆，老樣子。', '老闆，老樣子。', '再來一壺。'],
       lineIndex: 0,
       glitching: false,
     },

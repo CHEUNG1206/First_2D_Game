@@ -649,13 +649,13 @@ export function objectiveText(state: GameState): string {
 }
 
 export function sceneCaption(state: GameState): string {
-  if (state.location === 'store') return '便利商店的燈太白。店員的句子比人少。'
-  if (state.location === 'park') return '公園。農人會再講一次天氣。貓不會盤問你。'
-  if (state.location === 'office') return '公司。爸爸若在，這裡只有他聽得見。'
-  if (state.location === 'school') return '學校。妹妹若在，這裡只有她聽得見。'
-  if (state.location === 'street') return '街上。市場的人若在，才算在場。'
-  if (state.phase === 'night') return '家裡的燈還亮著。筆記通常在你睡了之後才會合體。'
-  if (state.phase === 'morning') return '白天。媽媽在家，爸爸在公司，妹妹在學校。沒有人在倒數，睡了才算一天。'
+  if (state.location === 'store') return '一樓大堂。常客只會點老樣子。媽媽若在櫃檯，聽得見你。'
+  if (state.location === 'park') return '茶寮。農人會再講一次天氣。這裡沒有會學習的人。'
+  if (state.location === 'office') return '二樓帳房。爸爸若在，雅間裡只有他聽得見。'
+  if (state.location === 'school') return '街對面的書塾。妹妹若在，這裡只有她聽得見。'
+  if (state.location === 'street') return '街上人很多。他們不會學習。家人要在同一層才聽得見。'
+  if (state.phase === 'night') return '三樓的燈還亮著。筆記通常在你睡了之後才會合體。'
+  if (state.phase === 'morning') return '白天。媽媽在一樓，爸爸在二樓，妹妹在書塾。沒有人在倒數，睡了才算一天。'
   if (state.phase === 'afternoon') return '下午人少。不帶妹妹出門的話，沒有觀察者跟去。'
   return '傍晚客廳是滿的。一句話會被三個人聽見。'
 }
