@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { askFamily } from '../game/ask.ts'
 import { audienceFor } from '../game/family.ts'
 import type { GameEvent, GameState, SpeechJudgment, SpeechTurn } from '../game/types.ts'
@@ -45,7 +45,13 @@ function TalkSession({
   const [provider, setProvider] = useState<SpeechJudgment['provider'] | null>(null)
   const [failed, setFailed] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const logRef = useRef<HTMLDivElement>(null)
   const member = state.family.find((item) => item.id === scene.askerId)
+  useEffect(() => {
+    const node = logRef.current
+    if (!node) return
+    node.scrollTop = node.scrollHeight
+  }, [lines])
   const audience = audienceFor(state, scene.askerId)
 
   async function send() {
@@ -94,7 +100,7 @@ function TalkSession({
           {scene.speakerRole} · {scene.speakerName}
         </h2>
         <p className="prompt">{scene.prompt}</p>
-        <div className="talk-log">
+        <div className="talk-log" ref={logRef}>
           {lines.map((line, index) => (
             <p key={`${line.role}-${index}`} className={line.role === 'player' ? 'me' : 'them'}>
               <strong>{line.role === 'player' ? '你' : scene.speakerRole}</strong>
@@ -147,7 +153,7 @@ function TalkSession({
           {failed
             ? '這句沒送成，再試一次。'
             : provider === 'offline'
-              ? '這句由離線判斷接話。本機有 Qwen，或設了 Grok 金鑰，家人會改用模型。'
+              ? '離線判斷。接上本機 Qwen 或 Grok 之後，會改由模型回答。'
               : scene.inner}
         </p>
       </div>

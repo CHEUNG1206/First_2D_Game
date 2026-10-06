@@ -8,7 +8,7 @@ import type { LocationId } from '../game/types.ts'
 export const COLS = 48
 export const ROWS = 36
 export const TILE = 32
-export const INTERACT = 52
+export const INTERACT = 76
 
 export type Tile =
   | 'grass'
