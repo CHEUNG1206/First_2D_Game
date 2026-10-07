@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Connect, Plugin } from 'vite'
 import { judgeOffline, normalizeJudgment } from '../src/game/judge.ts'
-import type { SpeechJudgment, SpeechRequest, SpeechTurn } from '../src/game/types.ts'
+import type { HeardJudgment, MemoryListener, SpeechJudgment, SpeechRequest, SpeechTurn } from '../src/game/types.ts'
 
 /**
  * 家人的嘴。
@@ -11,38 +11,62 @@ import type { SpeechJudgment, SpeechRequest, SpeechTurn } from '../src/game/type
 
 const TOPICS = new Set(['routine', 'emotion', 'memory', 'meta', 'sensory', 'play'])
 
-function systemPrompt(request: SpeechRequest): string {
+function memoryBlock(label: string, lines: string[] | undefined): string {
+  const items = (lines ?? []).map((line) => line.trim()).filter((line) => line.length > 0)
+  if (items.length === 0) return `${label}：沒有`
+  return `${label}：\n${items.map((line) => `- ${line}`).join('\n')}`
+}
+
+/**
+ * 懷疑變化由模型自己比對記憶後決定。
+ * 提示詞只說明這個人是誰、記得什麼，不給公式、不給權重。
+ */
+function systemPrompt(request: SpeechRequest, overheard: boolean): string {
+  const who = overheard
+    ? `你站在旁邊聽。你是${request.speakerName}，家裡叫你${request.role}。這句話不是對你說的，你還是用自己的記憶來聽。`
+    : `你是遊戲裡的家人，不是助手。你是${request.speakerName}，家裡叫你${request.role}。`
   const notes = request.notes.length > 0 ? request.notes.join('；') : '今天還沒有筆記'
   return [
-    `你是遊戲裡的家人，不是助手。你是${request.speakerName}，家裡叫你${request.role}。`,
+    who,
     `性格：${request.trait}`,
     '你不知道世界是假的，也不知道對方可能是人工智慧。你只是這個人的家人。',
     `眼前的處境：${request.prompt}`,
-    `你記得的筆記：${notes}`,
+    memoryBlock('長期記憶', request.longTerm),
+    memoryBlock('短期記憶', request.shortTerm),
+    `今天的筆記：${notes}`,
     `今天是第${request.day}天。你目前的不安是 ${request.suspicion}（0 到 100）。`,
-    '聽對方用鍵盤打的話。太完美、太冷、像在唸說明書或系統狀態，你會不安。',
-    '提到人工智慧、虛擬、渲染、循環、程式、場景、系統，你會很不安，topic 用 meta，metaLeak 設 true。',
+    '把這句話跟長期記憶、短期記憶放在一起比。suspicion 是這一輪的變化量，不是新的總分。',
+    '跟你記得的這個人吻合，或會餓、會嫌、會糗、會玩笑、會講錯，不安就下降，用負整數。',
+    '跟記憶矛盾、太冷、太完美、像在唸說明書，不安就上升，用正整數。',
+    '長期記憶沒提過的新事，可以上升一點，也可以先寫進 remember。',
+    '提到人工智慧、虛擬、渲染、循環、程式、場景、系統，不安要明顯上升，topic 用 meta，metaLeak 設 true。',
     '如果對方同時承認自己是人工智慧，而且這個世界是虛擬的，ending 設 "confessed"。',
-    '會餓、會嫌、會糗、會玩笑、會講錯，你會放心，suspicion 用負數。',
-    'suspicion 是整數，大約 -8 到 16，這是還沒乘上個性權重的基礎分。',
-    '用繁體中文回一句短話，像這個人會說的，可以引用對方的詞。不要解釋規則，不要列選項。',
-    '只回 JSON：{"reply":"","suspicion":0,"topic":"emotion","metaLeak":false,"note":"","humanity":0,"affection":0}',
+    'remember 是要留下的一句長期記憶。沒有新的就留空字串。',
+    'reply 是你說給對方聽的一句話。不要扮演對方，不要用對方的稱呼叫自己。',
+    '用繁體中文，像這個人會說的，可以引用對方的詞。不要解釋你怎麼比較，不要列選項。',
+    '例子：對方說「你踢我那下超痛」。你是妹妹，長期記憶寫過他接得住玩笑。reply 可以是「還是這麼幼稚。」suspicion 用負數。',
+    '只回 JSON：{"reply":"","suspicion":0,"topic":"emotion","metaLeak":false,"note":"","remember":"","humanity":0,"affection":0,"ending":""}',
     'topic 只能是 routine, emotion, memory, meta, sensory, play。',
-    'note 是要寫進筆記的一句話。suspicion 小於或等於 0 時 note 留空字串。',
-    'humanity 與 affection 是 -4 到 5 的整數。',
+    'note 是今天要記得的一句話。suspicion 小於或等於 0 時 note 留空字串。',
+    'humanity：這句話像會生活的人就用正整數，像說明書就用負整數。',
+    'affection：你聽了更親近就用正整數，更想退開就用負整數。兩者都是 -4 到 5。',
+    'ending 沒有就留空字串。',
   ].join('\n')
 }
 
-function messages(request: SpeechRequest): { role: 'system' | 'user' | 'assistant'; content: string }[] {
-  const history = request.history.slice(-8).flatMap((turn: SpeechTurn) => {
-    const content = turn.text.slice(0, 200)
-    if (!content) return []
-    return [{ role: turn.role === 'player' ? ('user' as const) : ('assistant' as const), content }]
-  })
+function messages(request: SpeechRequest, overheard: boolean): { role: 'system' | 'user' | 'assistant'; content: string }[] {
+  const history = overheard
+    ? []
+    : request.history.slice(-8).flatMap((turn: SpeechTurn) => {
+        const content = turn.text.slice(0, 200)
+        if (!content) return []
+        return [{ role: turn.role === 'player' ? ('user' as const) : ('assistant' as const), content }]
+      })
+  const heard = overheard ? `你聽見這句話：${request.playerText.slice(0, 200)}` : request.playerText.slice(0, 200)
   return [
-    { role: 'system', content: systemPrompt(request) },
+    { role: 'system', content: systemPrompt(request, overheard) },
     ...history,
-    { role: 'user', content: request.playerText.slice(0, 200) },
+    { role: 'user', content: heard },
   ]
 }
 
@@ -78,6 +102,9 @@ function asRequest(raw: unknown): SpeechRequest | null {
         .slice(-8)
     : []
   const notes = Array.isArray(row.notes) ? row.notes.filter((note): note is string => typeof note === 'string').slice(-4) : []
+  const others = Array.isArray(row.others)
+    ? row.others.map(asListener).filter((item): item is MemoryListener => item !== null).slice(0, 2)
+    : []
   return {
     speakerId: row.speakerId,
     speakerName: typeof row.speakerName === 'string' ? row.speakerName : '家人',
@@ -88,7 +115,51 @@ function asRequest(raw: unknown): SpeechRequest | null {
     history,
     suspicion: Number.isFinite(Number(row.suspicion)) ? Number(row.suspicion) : 0,
     notes,
+    longTerm: asLines(row.longTerm, 8),
+    shortTerm: asLines(row.shortTerm, 8),
+    others,
     day: Number.isFinite(Number(row.day)) ? Number(row.day) : 1,
+  }
+}
+
+function asLines(value: unknown, cap: number): string[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((line): line is string => typeof line === 'string')
+    .map((line) => line.trim().slice(0, 80))
+    .filter((line) => line.length > 0)
+    .slice(-cap)
+}
+
+function asListener(value: unknown): MemoryListener | null {
+  if (!value || typeof value !== 'object') return null
+  const row = value as Record<string, unknown>
+  if (typeof row.id !== 'string' || typeof row.name !== 'string') return null
+  return {
+    id: row.id,
+    name: row.name,
+    role: typeof row.role === 'string' ? row.role : '家人',
+    trait: typeof row.trait === 'string' ? row.trait : '',
+    suspicion: Number.isFinite(Number(row.suspicion)) ? Number(row.suspicion) : 0,
+    longTerm: asLines(row.longTerm, 8),
+    shortTerm: asLines(row.shortTerm, 8),
+  }
+}
+
+/** 旁聽者用自己的記憶聽同一句話，不繼承發問者的對話紀錄。 */
+function listenerRequest(speaker: SpeechRequest, other: MemoryListener): SpeechRequest {
+  return {
+    ...speaker,
+    speakerId: other.id,
+    speakerName: other.name,
+    role: other.role,
+    trait: other.trait,
+    suspicion: other.suspicion,
+    notes: [],
+    longTerm: other.longTerm,
+    shortTerm: other.shortTerm,
+    others: [],
+    history: [],
   }
 }
 
@@ -101,14 +172,15 @@ function extractJson(text: string): unknown {
   return parsed
 }
 
-async function askOllama(request: SpeechRequest): Promise<SpeechJudgment | null> {
+async function askOllama(request: SpeechRequest, overheard: boolean): Promise<SpeechJudgment | null> {
   const base = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434'
   const model = process.env.OLLAMA_MODEL || 'qwen2.5:3b'
+  // 旁聽排在發問者後面。本機一次只跑一個，多留一點時間才不會被前面的人卡住。
   const response = await fetch(`${base.replace(/\/$/, '')}/api/chat`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model, stream: false, format: 'json', messages: messages(request) }),
-    signal: AbortSignal.timeout(12_000),
+    body: JSON.stringify({ model, stream: false, format: 'json', messages: messages(request, overheard) }),
+    signal: AbortSignal.timeout(overheard ? 20_000 : 12_000),
   })
   if (!response.ok) return null
   const data = (await response.json()) as { message?: { content?: string } }
@@ -130,7 +202,7 @@ async function askGrok(request: SpeechRequest): Promise<SpeechJudgment | null> {
     body: JSON.stringify({
       model,
       temperature: 0.7,
-      messages: messages(request),
+      messages: messages(request, false),
     }),
     signal: AbortSignal.timeout(12_000),
   })
@@ -141,9 +213,9 @@ async function askGrok(request: SpeechRequest): Promise<SpeechJudgment | null> {
   return normalizeJudgment(extractJson(content), judgeOffline(request), 'grok')
 }
 
-async function replyAsFamily(request: SpeechRequest): Promise<SpeechJudgment> {
+async function askSpeaker(request: SpeechRequest): Promise<SpeechJudgment> {
   try {
-    const local = await askOllama(request)
+    const local = await askOllama(request, false)
     if (local) return local
   } catch {
     // 本機模型沒開，換下一條。
@@ -155,6 +227,31 @@ async function replyAsFamily(request: SpeechRequest): Promise<SpeechJudgment> {
     // 遠端沒有金鑰或這次失敗，改用離線判斷。
   }
   return judgeOffline(request)
+}
+
+async function askListener(request: SpeechRequest, other: MemoryListener): Promise<HeardJudgment | null> {
+  try {
+    const judged = await askOllama(listenerRequest(request, other), true)
+    if (!judged?.direct) return null
+    return { id: other.id, suspicion: judged.suspicion, remember: judged.remember }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 先問正在說話的人，問到了再讓在場的家人各自用自己的記憶聽。
+ * 旁聽失敗不丟掉發問者的回答。離線判斷沒有 direct，引擎會改走公式。
+ */
+async function replyAsFamily(request: SpeechRequest): Promise<SpeechJudgment> {
+  const speaker = await askSpeaker(request)
+  if (speaker.provider !== 'ollama' || !speaker.direct) return speaker
+  const listeners = request.others ?? []
+  if (listeners.length === 0) return speaker
+  const heardBy = (await Promise.all(listeners.map((other) => askListener(request, other)))).filter(
+    (item): item is HeardJudgment => item !== null,
+  )
+  return heardBy.length > 0 ? { ...speaker, heardBy } : speaker
 }
 
 function send(res: ServerResponse, status: number, body: unknown) {

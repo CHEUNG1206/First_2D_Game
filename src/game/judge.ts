@@ -69,21 +69,29 @@ function base(partial: Omit<SpeechJudgment, 'provider'>): SpeechJudgment {
   return { ...partial, provider: 'offline' }
 }
 
-/** 把模型吐出來的 JSON 收成遊戲認得的判斷。收不回來就用離線那份。 */
+/**
+ * 把模型吐出來的 JSON 收成遊戲認得的判斷。收不回來就用離線那份。
+ * 模型自己決定懷疑變化，這裡只擋壞掉的數字（例如 999），不乘個性權重。
+ * 離線判斷仍夾在 -8 到 16，因為那條路之後還會進公式。
+ */
 export function normalizeJudgment(raw: unknown, fallback: SpeechJudgment, provider: SpeechJudgment['provider']): SpeechJudgment {
   if (!raw || typeof raw !== 'object') return fallback
   const row = raw as Record<string, unknown>
   const reply = typeof row.reply === 'string' ? row.reply.trim().slice(0, 80) : ''
   if (!reply) return fallback
+  const direct = provider === 'ollama' || provider === 'grok'
   const topic = TOPICS.includes(row.topic as Topic) ? (row.topic as Topic) : fallback.topic
   const suspicionRaw = Number(row.suspicion)
-  const suspicion = Number.isFinite(suspicionRaw) ? Math.max(-8, Math.min(16, Math.round(suspicionRaw))) : fallback.suspicion
+  const suspicion = Number.isFinite(suspicionRaw)
+    ? Math.max(direct ? -40 : -8, Math.min(direct ? 40 : 16, Math.round(suspicionRaw)))
+    : fallback.suspicion
   const humanityRaw = Number(row.humanity)
   const affectionRaw = Number(row.affection)
   const humanity = Number.isFinite(humanityRaw) ? Math.max(-4, Math.min(5, Math.round(humanityRaw))) : 0
   const affection = Number.isFinite(affectionRaw) ? Math.max(-4, Math.min(5, Math.round(affectionRaw))) : 0
-  const metaLeak = row.metaLeak === true || topic === 'meta' && suspicion >= 6
+  const metaLeak = direct ? row.metaLeak === true : row.metaLeak === true || (topic === 'meta' && suspicion >= 6)
   const note = typeof row.note === 'string' ? row.note.trim().slice(0, 40) : ''
+  const remember = typeof row.remember === 'string' ? row.remember.trim().slice(0, 40) : ''
   const ending: EndingId | undefined = row.ending === 'confessed' || fallback.ending === 'confessed' ? 'confessed' : undefined
   return {
     reply,
@@ -91,6 +99,8 @@ export function normalizeJudgment(raw: unknown, fallback: SpeechJudgment, provid
     topic,
     metaLeak,
     note: note.length > 0 ? note : undefined,
+    remember: remember.length > 0 ? remember : undefined,
+    direct: direct || undefined,
     humanity,
     affection,
     ending,

@@ -190,6 +190,7 @@ export function acknowledgeNight(state: GameState): GameState {
     ...member,
     suspicionAtDawn: member.suspicion,
     reassuredToday: false,
+    shortTerm: [],
   }))
   gameLog.info(`進入第${state.day + 1}天`)
   return beginPhase({
@@ -263,6 +264,8 @@ export function talkTo(state: GameState, actorId: string): GameState {
 /** 玩家打完的一句話。對話留在畫面上，方便繼續打下一句。 */
 export function applySpeech(state: GameState, spoken: SpeechJudgment): GameState {
   if (state.screen !== 'event' || !state.pendingEvent) return state
+  // 模型已經比過記憶。這裡只記帳，不再乘權重、不再加洩密加成。
+  if (spoken.direct) return finishSpeech(state, applyModelSpeech(state, spoken))
   const next = applyChoice(state, {
     id: 'spoken',
     text: spoken.reply,
@@ -275,11 +278,114 @@ export function applySpeech(state: GameState, spoken: SpeechJudgment): GameState
     affection: spoken.affection,
     ending: spoken.ending,
   })
+  return finishSpeech(state, next)
+}
+
+function finishSpeech(state: GameState, next: GameState): GameState {
   if (next.ending) {
     gameLog.warn(`結局 ${next.ending}`)
     return { ...next, screen: 'ending', pendingEvent: null }
   }
   return { ...next, screen: 'event', pendingEvent: state.pendingEvent }
+}
+
+/** 模型給的是變化量本身。40 只是擋壞掉的 JSON，不是個性權重。 */
+const MODEL_DELTA_CAP = 40
+
+function applyModelSpeech(state: GameState, spoken: SpeechJudgment): GameState {
+  const event = state.pendingEvent
+  if (!event) return state
+  const heard = clipMemory(spoken.heard ?? '')
+  const reply = clipMemory(spoken.reply)
+  let family = state.family.map((member) => ({
+    ...member,
+    notes: [...member.notes],
+    longTerm: [...member.longTerm],
+    shortTerm: [...member.shortTerm],
+  }))
+  const deltas: DeltaLine[] = []
+
+  if (event.askerId) {
+    const asker = family.find((member) => member.id === event.askerId)
+    if (asker) {
+      const delta = clampDelta(spoken.suspicion)
+      family = mapMember(family, asker.id, (member) => {
+        let next = withSuspicion(
+          member,
+          delta,
+          delta < 0,
+          spoken.note ?? (delta > 0 ? spoken.remember : undefined),
+          spoken.topic,
+          state.day,
+        )
+        if (spoken.remember) next = { ...next, longTerm: pushMemory(next.longTerm, spoken.remember) }
+        const today = [
+          heard ? `第${state.day}天 你說：${heard}` : '',
+          reply ? `第${state.day}天 我回：${reply}` : '',
+        ].filter((line) => line.length > 0)
+        next = { ...next, shortTerm: today.reduce((lines, line) => pushMemory(lines, line), next.shortTerm) }
+        if (spoken.affection) next = { ...next, affection: clamp(next.affection + spoken.affection, 0, 100) }
+        return next
+      })
+      deltas.push({ label: `${asker.role} 懷疑`, value: delta })
+      if (spoken.affection) deltas.push({ label: `${asker.role} 親近`, value: spoken.affection })
+      gameLog.info(`模型判斷 ${asker.id} 懷疑 ${delta}`)
+    }
+
+    for (const heardJudgment of spoken.heardBy ?? []) {
+      if (heardJudgment.id === event.askerId) continue
+      const who = family.find((member) => member.id === heardJudgment.id)
+      if (!who) continue
+      const delta = clampDelta(heardJudgment.suspicion)
+      family = mapMember(family, who.id, (member) => {
+        let next = withSuspicion(
+          member,
+          delta,
+          delta < 0,
+          delta > 0 ? `旁聽：${heard || spoken.note || '一句話'}` : undefined,
+          spoken.topic,
+          state.day,
+        )
+        if (heardJudgment.remember) next = { ...next, longTerm: pushMemory(next.longTerm, heardJudgment.remember) }
+        if (heard) next = { ...next, shortTerm: pushMemory(next.shortTerm, `第${state.day}天 旁聽你說：${heard}`) }
+        return next
+      })
+      deltas.push({ label: `${who.role} 旁聽`, value: delta })
+      gameLog.info(`模型旁聽 ${who.id} 懷疑 ${delta}`)
+    }
+  }
+
+  const humanity = clamp(state.humanity + spoken.humanity, 0, 100)
+  if (spoken.humanity) deltas.push({ label: '人味', value: spoken.humanity })
+
+  let ending: EndingId | null = spoken.ending ?? null
+  if (!ending && family.some((member) => member.suspicion >= EXPOSED_AT)) ending = 'exposed'
+  logSuspicion(family)
+  return {
+    ...state,
+    family,
+    humanity,
+    banner: { title: event.title, text: spoken.reply, deltas },
+    log: pushLog(state, spoken.reply),
+    ending,
+    endingBlurb: ending ? endingCopy(ending, family) : state.endingBlurb,
+  }
+}
+
+function clampDelta(amount: number): number {
+  if (!Number.isFinite(amount)) return 0
+  return clamp(Math.round(amount), -MODEL_DELTA_CAP, MODEL_DELTA_CAP)
+}
+
+function clipMemory(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().slice(0, 40)
+}
+
+function pushMemory(lines: string[], line: string): string[] {
+  const clean = line.trim()
+  if (!clean || lines.includes(clean)) return lines
+  const next = [...lines, clean]
+  return next.length > 8 ? next.slice(next.length - 8) : next
 }
 
 /** 先去忙。不推進時間。 */

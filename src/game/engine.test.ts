@@ -184,6 +184,40 @@ describe('daytime', () => {
     state = leaveTalk(state)
     expect(state.screen).toBe('play')
   })
+
+  it('模型給的懷疑值原樣加上，天亮才清短期記憶', () => {
+    let state = beginWeek(createInitialState())
+    state = talkTo(state, 'mom')
+    const before = state.family.find((member) => member.id === 'mom')!
+    state = applySpeech(state, {
+      reply: '你進門只嗯了一聲。',
+      suspicion: 5,
+      topic: 'emotion',
+      metaLeak: true,
+      remember: '你進門只嗯了一聲',
+      heard: '嗯',
+      humanity: 0,
+      affection: 1,
+      direct: true,
+      provider: 'ollama',
+      heardBy: [{ id: 'dad', suspicion: 3, remember: '你對媽媽只嗯了一聲' }],
+    })
+    const mom = state.family.find((member) => member.id === 'mom')!
+    const dad = state.family.find((member) => member.id === 'dad')!
+    expect(state.screen).toBe('event')
+    expect(mom.suspicion).toBe(before.suspicion + 5)
+    expect(mom.affection).toBe(before.affection + 1)
+    expect(mom.longTerm).toContain('你進門只嗯了一聲')
+    expect(mom.shortTerm.some((line) => line.includes('嗯'))).toBe(true)
+    expect(dad.suspicion).toBe(13)
+    expect(dad.longTerm).toContain('你對媽媽只嗯了一聲')
+    state = leaveTalk(state)
+    state = chooseAction(state, 'sleep')
+    state = acknowledgeNight(state)
+    const dawn = state.family.find((member) => member.id === 'mom')!
+    expect(dawn.shortTerm).toEqual([])
+    expect(dawn.longTerm).toContain('你進門只嗯了一聲')
+  })
 })
 
 function play(decider: (state: GameState) => GameState): GameState {

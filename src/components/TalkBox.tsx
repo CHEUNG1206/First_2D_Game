@@ -71,6 +71,19 @@ function TalkSession({
         history: lines,
         suspicion: member?.suspicion ?? 0,
         notes: member?.notes.map((note) => note.text) ?? [],
+        longTerm: member?.longTerm ?? [],
+        shortTerm: member?.shortTerm ?? [],
+        others: audience
+          .filter((item) => !item.direct)
+          .map((item) => ({
+            id: item.member.id,
+            name: item.member.name,
+            role: item.member.role,
+            trait: item.member.trait,
+            suspicion: item.member.suspicion,
+            longTerm: item.member.longTerm,
+            shortTerm: item.member.shortTerm,
+          })),
         day: state.day,
       })
       setLines((prev) => [
@@ -79,7 +92,7 @@ function TalkSession({
         { role: 'family', text: judgment.reply },
       ])
       setProvider(judgment.provider)
-      onSpoken(judgment)
+      onSpoken({ ...judgment, heard: playerText })
     } catch {
       setFailed(true)
       setText(playerText)

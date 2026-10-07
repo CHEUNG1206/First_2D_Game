@@ -28,6 +28,10 @@ export interface FamilyMember {
   /** 週一到週六在家的時段。週日由在場判斷另外處理。 */
   homePhases: Phase[]
   notes: MemoryNote[]
+  /** 這個人本來就知道的事。跨過今晚還在。 */
+  longTerm: string[]
+  /** 今天親耳聽到的話。天亮就清掉。 */
+  shortTerm: string[]
   suspicionAtDawn: number
   reassuredToday: boolean
 }
@@ -175,6 +179,24 @@ export interface SpeechTurn {
   text: string
 }
 
+/** 站在旁邊、也要自己聽的家人。 */
+export interface MemoryListener {
+  id: string
+  name: string
+  role: string
+  trait: string
+  suspicion: number
+  longTerm: string[]
+  shortTerm: string[]
+}
+
+/** 模型聽完之後，給這個人的懷疑變化和要留下的長期記憶。 */
+export interface HeardJudgment {
+  id: string
+  suspicion: number
+  remember?: string
+}
+
 /** 送給家人模型的這一輪。提示詞只描述處境，回答由玩家自己打。 */
 export interface SpeechRequest {
   speakerId: string
@@ -186,12 +208,15 @@ export interface SpeechRequest {
   history: SpeechTurn[]
   suspicion: number
   notes: string[]
+  longTerm?: string[]
+  shortTerm?: string[]
+  others?: MemoryListener[]
   day: number
 }
 
 /**
  * 家人聽完一句話之後的判斷。
- * suspicion 仍是乘權重之前的帶符號基礎值。
+ * direct 為真時，suspicion 是模型自己決定的變化，程式不再乘權重。
  */
 export interface SpeechJudgment {
   reply: string
@@ -199,6 +224,11 @@ export interface SpeechJudgment {
   topic: Topic
   metaLeak: boolean
   note?: string
+  remember?: string
+  heard?: string
+  heardBy?: HeardJudgment[]
+  /** 這份分數來自模型對記憶的判斷，不進公式。 */
+  direct?: boolean
   humanity: number
   affection: number
   ending?: EndingId

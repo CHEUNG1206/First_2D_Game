@@ -60,16 +60,34 @@ describe('judgeOffline', () => {
 })
 
 describe('normalizeJudgment', () => {
-  it('模型亂給的數字會被夾回可用範圍', () => {
+  it('模型亂給的數字只擋壞值，不改成公式用的基礎分', () => {
     const fallback = judgeOffline(ask('好餓啦'))
     const judged = normalizeJudgment(
-      { reply: '你還是會喊餓。', suspicion: 90, topic: 'sensory', metaLeak: false, humanity: 9, affection: -9 },
+      {
+        reply: '你還是會喊餓。',
+        suspicion: 90,
+        topic: 'sensory',
+        metaLeak: false,
+        humanity: 9,
+        affection: -9,
+        remember: '你進門還是先喊餓。',
+      },
       fallback,
-      'grok',
+      'ollama',
     )
-    expect(judged.provider).toBe('grok')
-    expect(judged.suspicion).toBe(16)
+    expect(judged.provider).toBe('ollama')
+    expect(judged.direct).toBe(true)
+    expect(judged.suspicion).toBe(40)
     expect(judged.humanity).toBe(5)
     expect(judged.affection).toBe(-4)
+    expect(judged.remember).toBe('你進門還是先喊餓。')
+    expect(judged.metaLeak).toBe(false)
+  })
+
+  it('沒有回覆就退回離線判斷', () => {
+    const fallback = judgeOffline(ask('嗯'))
+    const judged = normalizeJudgment({ suspicion: 3 }, fallback, 'ollama')
+    expect(judged).toEqual(fallback)
+    expect(judged.direct).toBeUndefined()
   })
 })
