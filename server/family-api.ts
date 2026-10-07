@@ -103,7 +103,7 @@ function extractJson(text: string): unknown {
 
 async function askOllama(request: SpeechRequest): Promise<SpeechJudgment | null> {
   const base = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434'
-  const model = process.env.OLLAMA_MODEL || 'qwen2.5:7b'
+  const model = process.env.OLLAMA_MODEL || 'qwen2.5:3b'
   const response = await fetch(`${base.replace(/\/$/, '')}/api/chat`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

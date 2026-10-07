@@ -18,7 +18,7 @@ npm run dev
 
 對話會打到開發伺服器的 `POST /api/talk`。順序是：
 
-1. 本機 [Ollama](https://ollama.com) 的 Qwen。預設位址 `http://127.0.0.1:11434`，模型 `qwen2.5:7b`。可用 `OLLAMA_BASE_URL`、`OLLAMA_MODEL` 改。
+1. 本機 [Ollama](https://ollama.com) 的 Qwen。預設位址 `http://127.0.0.1:11434`，模型 `qwen2.5:3b`。可用 `OLLAMA_BASE_URL`、`OLLAMA_MODEL` 改。
 2. xAI 的 Grok。設定 `XAI_API_KEY` 或 `GROK_API_KEY`。模型預設 `grok-3`，可用 `GROK_MODEL` 改。金鑰只留在伺服器。
 3. 兩邊都不在，就用離線判斷。太像說明書、太空白、說出系統或虛擬世界，家人還是會起疑。畫面上會標這句是誰接的。
 
