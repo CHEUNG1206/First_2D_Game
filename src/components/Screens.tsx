@@ -9,7 +9,17 @@ const INTRO = [
   '任務很單純：過完這七天。不要讓家人發現你是人工智慧，也不要讓他們發現世界是虛擬的。',
 ]
 
-export function TitleScreen({ onStart, onRules }: { onStart: () => void; onRules: () => void }) {
+export function TitleScreen({
+  hasSave,
+  onStart,
+  onContinue,
+  onRules,
+}: {
+  hasSave: boolean
+  onStart: () => void
+  onContinue: () => void
+  onRules: () => void
+}) {
   return (
     <section className="title-screen">
       <p className="eyebrow">家庭模擬 · 七天觀察週</p>
@@ -24,6 +34,11 @@ export function TitleScreen({ onStart, onRules }: { onStart: () => void; onRules
         <PixelFace id="sister" />
       </div>
       <div className="title-actions">
+        {hasSave && (
+          <button type="button" className="primary" onClick={onContinue}>
+            繼續這一週
+          </button>
+        )}
         <button type="button" className="primary" onClick={onStart}>
           開始這一週
         </button>
@@ -131,11 +146,10 @@ export function Rules({ onClose }: { onClose: () => void }) {
       <div className="dialog rules" role="dialog" aria-modal="true" aria-labelledby="rules-title">
         <h2 id="rules-title">這一週的規則</h2>
         <p>這是一張俯視的點陣小鎮。方向鍵或點地走路，靠近人和家具再按互動。吃飯、說話都不會把一天用掉。回到床上睡，這一天才結束。</p>
-        <p>家人沒有固定答案。你用鍵盤打。他們會先找本機的 Qwen，沒有再找 Grok，兩邊都不在就用離線判斷。路人不會學習，也不走這條路。</p>
-        <p>只有同一層的家人聽得見。平日媽媽在一樓大堂、爸爸在二樓帳房、妹妹上午在書塾。週日全部留在三樓。</p>
-        <p>太完整、太空白，都會被記下來。把循環、場景、人工智慧說出口，緩衝也救不了。</p>
-        <p>親近可以讓普通差錯輕一點，不能買通洩密。一起吃晚飯只加親近，不算把人安撫好。</p>
-        <p>你睡了之後，已經在意你、卻今天沒被安撫的人，會把空白當成證據。上升夠多的筆記，會傳給白天不在場的家人。</p>
+        <p>家人沒有固定答案。你用鍵盤打。他們會拿自己記得的事，請本機的 Qwen 決定這句話讓他們更安心還是更不安。模型沒接上時，畫面會寫明這句改用離線判斷。路人不會學習。</p>
+        <p>只有同一層的家人聽得見。平日白天媽媽在一樓大堂、爸爸在二樓帳房、妹妹在書塾。一樓收店之後是傍晚，全家回到三樓。週日從早到晚都在三樓。</p>
+        <p>按鈕不會直接改懷疑。有人看見的事會記進今天。睡覺之後，每個人自己決定留下什麼、要不要告訴另一個人、明天要問你什麼。</p>
+        <p>這一週會記在這台機器上。重新整理還在。看完結局就清掉。</p>
         <p>一樓的常客、街上的農人和挑夫只會重複台詞。他們沒有懷疑。對他們指出循環，家裡不會知道——除非家人就站在同一層。</p>
         <button type="button" className="primary" onClick={onClose}>
           知道了

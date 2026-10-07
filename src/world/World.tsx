@@ -101,47 +101,10 @@ export function World({
   const [near, setNear] = useState<Near>({ personId: null, personName: null, hotspotId: null })
   const nearKey = useRef('')
   const [localBark, setLocalBark] = useState<string | null>(null)
-
-  lockedRef.current = locked
-  stateRef.current = state
-
-  useEffect(() => {
-    if (!state.banner) return
-    for (const delta of state.banner.deltas) {
-      floaters.current.push({
-        x: pos.current.x,
-        y: pos.current.y - 28,
-        text: `${delta.label} ${delta.value > 0 ? '+' : ''}${delta.value}`,
-        life: 1,
-        bad: delta.value > 0 && (delta.label.includes('懷疑') || delta.label.includes('旁聽')),
-      })
-    }
-  }, [state.banner])
-
-  useEffect(() => {
-    const down = (event: KeyboardEvent) => {
-      const tag = (event.target as HTMLElement | null)?.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA') return
-      const key = event.key.toLowerCase()
-      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd', ' '].includes(key)) {
-        event.preventDefault()
-      }
-      if (key === ' ' || key === 'enter') {
-        pressInteract()
-        return
-      }
-      keys.current.add(key)
-      target.current = null
-      path.current = []
-    }
-    const up = (event: KeyboardEvent) => keys.current.delete(event.key.toLowerCase())
-    window.addEventListener('keydown', down)
-    window.addEventListener('keyup', up)
-    return () => {
-      window.removeEventListener('keydown', down)
-      window.removeEventListener('keyup', up)
-    }
-  }, [])
+  const bob = useRef(0)
+  const pressRef = useRef<() => void>(() => {})
+  const stepRef = useRef<(dt: number) => void>(() => {})
+  const drawRef = useRef<() => void>(() => {})
 
   function pressInteract() {
     if (lockedRef.current) return
@@ -167,22 +130,9 @@ export function World({
     }
   }
 
-  useEffect(() => {
-    let frame = 0
-    let last = performance.now()
-    const tick = (now: number) => {
-      const dt = Math.min(0.033, (now - last) / 1000)
-      last = now
-      step(dt)
-      draw()
-      frame = requestAnimationFrame(tick)
-    }
-    frame = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(frame)
-  }, [])
-
   function step(dt: number) {
     if (!lockedRef.current) movePlayer(dt)
+    bob.current += dt
     moveActors(dt)
     const tileX = Math.floor(pos.current.x / TILE)
     const tileY = Math.floor(pos.current.y / TILE)
@@ -192,11 +142,9 @@ export function World({
       onVisit(nextZone)
     }
     rememberNearby()
-    for (const floater of floaters.current) {
-      floater.y -= 18 * dt
-      floater.life -= dt * 0.45
-    }
-    floaters.current = floaters.current.filter((floater) => floater.life > 0)
+    floaters.current = floaters.current
+      .map((floater) => ({ ...floater, y: floater.y - 18 * dt, life: floater.life - dt * 0.45 }))
+      .filter((floater) => floater.life > 0)
     if (bark.current) {
       bark.current.life -= dt * 0.35
       if (bark.current.life <= 0) {
@@ -419,7 +367,7 @@ export function World({
         bob: actor.bob,
         facing: actor.facing,
       })),
-      { id: 'self', name: '你', x: pos.current.x, y: pos.current.y, bob: performance.now() / 180, facing: face.current },
+      { id: 'self', name: '你', x: pos.current.x, y: pos.current.y, bob: bob.current * 6, facing: face.current },
     ].sort((a, b) => a.y - b.y)
     for (const person of people) {
       const hop = Math.round(Math.sin(person.bob) * 2)
@@ -439,6 +387,69 @@ export function World({
       drawBubble(ctx, bark.current.text, pos.current.x - camX, pos.current.y - camY - 62)
     }
   }
+
+  useEffect(() => {
+    lockedRef.current = locked
+    stateRef.current = state
+    pressRef.current = pressInteract
+    stepRef.current = step
+    drawRef.current = draw
+  })
+
+  useEffect(() => {
+    if (!state.banner) return
+    for (const delta of state.banner.deltas) {
+      floaters.current = [
+        ...floaters.current,
+        {
+          x: pos.current.x,
+          y: pos.current.y - 28,
+          text: `${delta.label} ${delta.value > 0 ? '+' : ''}${delta.value}`,
+          life: 1,
+          bad: delta.value > 0 && (delta.label.includes('懷疑') || delta.label.includes('旁聽')),
+        },
+      ]
+    }
+  }, [state.banner])
+
+  useEffect(() => {
+    const down = (event: KeyboardEvent) => {
+      const tag = (event.target as HTMLElement | null)?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return
+      const key = event.key.toLowerCase()
+      if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'w', 'a', 's', 'd', ' '].includes(key)) {
+        event.preventDefault()
+      }
+      if (key === ' ' || key === 'enter') {
+        pressRef.current()
+        return
+      }
+      keys.current.add(key)
+      target.current = null
+      path.current = []
+    }
+    const up = (event: KeyboardEvent) => keys.current.delete(event.key.toLowerCase())
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+    }
+  }, [])
+
+  useEffect(() => {
+    let frame = 0
+    let last = performance.now()
+    const tick = (now: number) => {
+      const dt = Math.min(0.033, (now - last) / 1000)
+      last = now
+      stepRef.current(dt)
+      drawRef.current()
+      frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [])
 
   function clickMap(event: React.MouseEvent<HTMLCanvasElement>) {
     if (lockedRef.current) return

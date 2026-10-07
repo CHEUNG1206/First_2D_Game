@@ -1,4 +1,4 @@
-import type { EndingId, SpeechJudgment, SpeechRequest, Topic } from './types.ts'
+import type { EndingId, NightJudgment, NightRequest, SpeechJudgment, SpeechRequest, Topic } from './types.ts'
 
 /**
  * 沒有模型時的家人。
@@ -181,4 +181,34 @@ export function judgeOffline(request: SpeechRequest): SpeechJudgment {
     humanity: 0,
     affection: 0,
   })
+}
+
+/**
+ * 模型沒接上時的夜談。
+ * 規則固定：說破系統就留下一句並上升，會餓會嫌就下降，空白且已經在意就再記一筆。
+ */
+export function nightOffline(request: NightRequest): NightJudgment {
+  const blob = request.today.map((item) => item.text).join(' ')
+  const learned: string[] = []
+  let suspicion = 0
+  if (META_WORD.test(blob)) {
+    suspicion = 8
+    learned.push(clipNote(blob))
+  } else if (blob.length === 0 && request.suspicion >= 24) {
+    suspicion = 3
+    learned.push('今天幾乎沒有被看見')
+  } else if (HUMAN_WORD.test(blob)) {
+    suspicion = -2
+  }
+  const other = request.others[0]
+  const tell = suspicion >= 4 && other ? { tellTo: other.id, tellLine: learned[0] ?? '今天有點不對勁' } : {}
+  const opener = blob.length === 0 ? '今天話很少。你還好嗎？' : '我一直在想你白天那句。你自己怎麼說？'
+  return {
+    id: request.id,
+    suspicion,
+    learned: learned.slice(0, 2),
+    opener,
+    provider: 'offline',
+    ...tell,
+  }
 }

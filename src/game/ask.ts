@@ -1,6 +1,7 @@
-import { judgeOffline } from './judge.ts'
+import { judgeOffline, nightOffline } from './judge.ts'
 import { gameLog } from './logger.ts'
-import type { SpeechJudgment, SpeechRequest } from './types.ts'
+import { nightRequests } from './engine.ts'
+import type { GameState, NightJudgment, SpeechJudgment, SpeechRequest } from './types.ts'
 
 /**
  * 先問本機的對話接口。
@@ -31,5 +32,26 @@ export async function askFamily(request: SpeechRequest): Promise<SpeechJudgment>
     const message = error instanceof Error ? error.message : 'unknown'
     gameLog.warn(`家人接口改走離線判斷 ${message}`)
     return judgeOffline(payload)
+  }
+}
+
+/** 睡覺之後問夜談。接口失敗就用離線整理，畫面會標出來。 */
+export async function askNight(state: GameState): Promise<NightJudgment[]> {
+  const members = nightRequests(state)
+  try {
+    const response = await fetch('/api/night', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ members }),
+    })
+    if (!response.ok) throw new Error(`night ${response.status}`)
+    const data = (await response.json()) as { judgments?: NightJudgment[] }
+    if (!data.judgments || data.judgments.length === 0) throw new Error('night shape')
+    gameLog.info(`夜談來自 ${data.judgments.map((item) => item.provider).join(',')}`)
+    return data.judgments
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown'
+    gameLog.warn(`夜談改走離線判斷 ${message}`)
+    return members.map((member) => nightOffline(member))
   }
 }

@@ -1,21 +1,11 @@
 import { actionById, ACTIONS } from './actions.ts'
-import { audienceFor, createFamily, findMember, memberIsPresent } from './family.ts'
-import {
-  clamp,
-  DRIFT,
-  EXPOSED_AT,
-  MEETING_AT,
-  MEETING_COUNT,
-  overhearAmount,
-  pickDriftTarget,
-  scoreSuspicion,
-  SHARE_GAIN_MIN,
-  SHARE_RATIO,
-  UNEASY_AT,
-} from './formula.ts'
+import { createFamily, findMember, memberIsPresent } from './family.ts'
+import { clamp, EXPOSED_AT, MEETING_AT, MEETING_COUNT, UNEASY_AT } from './formula.ts'
+import { nightOffline } from './judge.ts'
 import { gameLog } from './logger.ts'
+import { perceive, remember } from './memory.ts'
 import { createNpcs, cycleNpc } from './npcs.ts'
-import { CONFESS_EVENT, idleTalk, pickStory, storyFor, storiesNow } from './events.ts'
+import { CONFESS_EVENT, idleTalk, openerEvent, pickStory, storyFor, storiesNow } from './events.ts'
 import type {
   ActionOffer,
   Banner,
@@ -24,7 +14,9 @@ import type {
   EventChoice,
   FamilyMember,
   GameState,
-  MemoryNote,
+  MemoryItem,
+  NightJudgment,
+  NightRequest,
   Phase,
   PlayerAction,
   SpeechJudgment,
@@ -69,6 +61,7 @@ export function createInitialState(): GameState {
     log: [],
     flags: {},
     seenEvents: [],
+    openers: {},
     pendingEvent: null,
     eventAdvances: false,
     banner: null,
@@ -154,11 +147,28 @@ export function chooseAction(state: GameState, actionId: string): GameState {
   }
   const next = applyAction(state, action)
   if (next.ending) return { ...next, screen: 'ending', pendingEvent: null }
+  if (action.id === 'close_shop') return advanceTo(next, 'evening')
   if (action.id === 'sleep') {
     gameLog.info(`第${state.day}天去睡覺`)
-    return buildNight({ ...next, phase: 'night' })
+    return settleNight(next, offlineNights(next))
   }
   return next
+}
+
+/** 套用睡覺的體力變化，不進入夜談。畫面要先問模型時用這個。 */
+export function prepareSleep(state: GameState): GameState | null {
+  if (state.screen !== 'play') return null
+  const visible = availableActions(state).find((action) => action.id === 'sleep')
+  if (!visible?.enabled) return null
+  const action = actionById('sleep')
+  if (!action) return null
+  return applyAction(state, action)
+}
+
+export function advanceTo(state: GameState, phase: Phase): GameState {
+  if (state.ending) return { ...state, screen: 'ending' }
+  gameLog.info(`時段推進到${PHASE_LABEL[phase]}`)
+  return beginPhase({ ...state, phase })
 }
 
 export function chooseChoice(state: GameState, choiceId: string): GameState {
@@ -190,7 +200,6 @@ export function acknowledgeNight(state: GameState): GameState {
     ...member,
     suspicionAtDawn: member.suspicion,
     reassuredToday: false,
-    shortTerm: [],
   }))
   gameLog.info(`進入第${state.day + 1}天`)
   return beginPhase({
@@ -207,9 +216,9 @@ export function acknowledgeNight(state: GameState): GameState {
 
 export function advancePhase(state: GameState): GameState {
   if (state.ending) return { ...state, screen: 'ending' }
-  if (state.phase === 'night') return buildNight(state)
+  if (state.phase === 'night') return settleNight(state, offlineNights(state))
   const phase = PHASE_ORDER[PHASE_ORDER.indexOf(state.phase) + 1]
-  if (!phase) return buildNight(state)
+  if (!phase) return settleNight(state, offlineNights(state))
   return beginPhase({ ...state, phase })
 }
 
@@ -236,9 +245,20 @@ export function dueStory(state: GameState) {
   return pickStory(state)
 }
 
-/** 走到那個人旁邊再開口。有劇情就進劇情，沒有就閒聊。時間不往前走。 */
+/** 走到那個人旁邊再開口。有劇情就進劇情，沒有就閒聊。時間不往前走。說出口之前不算看過。 */
 export function talkTo(state: GameState, actorId: string): GameState {
   if (state.screen !== 'play') return state
+  const member = findMember(state, actorId)
+  const opener = state.openers[actorId]
+  if (member && opener) {
+    gameLog.info(`走上前，聽 ${actorId} 夜裡想好的問題`)
+    return {
+      ...state,
+      screen: 'event',
+      pendingEvent: openerEvent(member, state.day, opener),
+      eventAdvances: false,
+    }
+  }
   const story = storyFor(state, actorId)
   if (story) {
     gameLog.info(`走上前跟 ${actorId} 說話：${story.id}`)
@@ -247,10 +267,8 @@ export function talkTo(state: GameState, actorId: string): GameState {
       screen: 'event',
       pendingEvent: story,
       eventAdvances: false,
-      seenEvents: [...state.seenEvents, story.id],
     }
   }
-  const member = findMember(state, actorId)
   if (!member) return state
   gameLog.info(`跟 ${actorId} 閒聊`)
   return {
@@ -261,24 +279,28 @@ export function talkTo(state: GameState, actorId: string): GameState {
   }
 }
 
-/** 玩家打完的一句話。對話留在畫面上，方便繼續打下一句。 */
+/** 玩家打完的一句話。懷疑值照模型給的整數加上，離線判斷也是。 */
 export function applySpeech(state: GameState, spoken: SpeechJudgment): GameState {
   if (state.screen !== 'event' || !state.pendingEvent) return state
-  // 模型已經比過記憶。這裡只記帳，不再乘權重、不再加洩密加成。
-  if (spoken.direct) return finishSpeech(state, applyModelSpeech(state, spoken))
-  const next = applyChoice(state, {
-    id: 'spoken',
-    text: spoken.reply,
-    result: spoken.reply,
-    suspicion: spoken.suspicion,
-    topic: spoken.topic,
-    metaLeak: spoken.metaLeak,
-    note: spoken.note,
-    humanity: spoken.humanity,
-    affection: spoken.affection,
-    ending: spoken.ending,
-  })
-  return finishSpeech(state, next)
+  const marked = markSpoken(state)
+  return finishSpeech(marked, applyModelSpeech(marked, spoken))
+}
+
+/** 第一句說出口才算看過這題。先去忙不會把題目吃掉。開場白用過就清。 */
+function markSpoken(state: GameState): GameState {
+  const event = state.pendingEvent
+  if (!event) return state
+  let next = state
+  const counted = !event.id.startsWith('chat_') && !event.id.startsWith('opener_')
+  if (counted && !next.seenEvents.includes(event.id)) {
+    next = { ...next, seenEvents: [...next.seenEvents, event.id] }
+  }
+  if (event.askerId && next.openers[event.askerId]) {
+    const openers = { ...next.openers }
+    delete openers[event.askerId]
+    next = { ...next, openers }
+  }
+  return next
 }
 
 function finishSpeech(state: GameState, next: GameState): GameState {
@@ -297,12 +319,7 @@ function applyModelSpeech(state: GameState, spoken: SpeechJudgment): GameState {
   if (!event) return state
   const heard = clipMemory(spoken.heard ?? '')
   const reply = clipMemory(spoken.reply)
-  let family = state.family.map((member) => ({
-    ...member,
-    notes: [...member.notes],
-    longTerm: [...member.longTerm],
-    shortTerm: [...member.shortTerm],
-  }))
+  let family = copyFamily(state.family)
   const deltas: DeltaLine[] = []
 
   if (event.askerId) {
@@ -310,20 +327,12 @@ function applyModelSpeech(state: GameState, spoken: SpeechJudgment): GameState {
     if (asker) {
       const delta = clampDelta(spoken.suspicion)
       family = mapMember(family, asker.id, (member) => {
-        let next = withSuspicion(
-          member,
-          delta,
-          delta < 0,
-          spoken.note ?? (delta > 0 ? spoken.remember : undefined),
-          spoken.topic,
-          state.day,
-        )
-        if (spoken.remember) next = { ...next, longTerm: pushMemory(next.longTerm, spoken.remember) }
-        const today = [
-          heard ? `第${state.day}天 你說：${heard}` : '',
-          reply ? `第${state.day}天 我回：${reply}` : '',
-        ].filter((line) => line.length > 0)
-        next = { ...next, shortTerm: today.reduce((lines, line) => pushMemory(lines, line), next.shortTerm) }
+        let next = shiftSuspicion(member, delta)
+        if (spoken.remember) {
+          next = { ...next, learned: remember(next.learned, { day: state.day, kind: 'said', text: spoken.remember }) }
+        }
+        if (heard) next = { ...next, today: perceive(next.today, { day: state.day, kind: 'heard', text: `你說：${heard}` }) }
+        if (reply) next = { ...next, today: perceive(next.today, { day: state.day, kind: 'said', text: `我回：${reply}` }) }
         if (spoken.affection) next = { ...next, affection: clamp(next.affection + spoken.affection, 0, 100) }
         return next
       })
@@ -338,16 +347,11 @@ function applyModelSpeech(state: GameState, spoken: SpeechJudgment): GameState {
       if (!who) continue
       const delta = clampDelta(heardJudgment.suspicion)
       family = mapMember(family, who.id, (member) => {
-        let next = withSuspicion(
-          member,
-          delta,
-          delta < 0,
-          delta > 0 ? `旁聽：${heard || spoken.note || '一句話'}` : undefined,
-          spoken.topic,
-          state.day,
-        )
-        if (heardJudgment.remember) next = { ...next, longTerm: pushMemory(next.longTerm, heardJudgment.remember) }
-        if (heard) next = { ...next, shortTerm: pushMemory(next.shortTerm, `第${state.day}天 旁聽你說：${heard}`) }
+        let next = shiftSuspicion(member, delta)
+        if (heardJudgment.remember) {
+          next = { ...next, learned: remember(next.learned, { day: state.day, kind: 'heard', text: heardJudgment.remember }) }
+        }
+        if (heard) next = { ...next, today: perceive(next.today, { day: state.day, kind: 'heard', text: `旁聽你說：${heard}` }) }
         return next
       })
       deltas.push({ label: `${who.role} 旁聽`, value: delta })
@@ -381,11 +385,13 @@ function clipMemory(text: string): string {
   return text.replace(/\s+/g, ' ').trim().slice(0, 40)
 }
 
-function pushMemory(lines: string[], line: string): string[] {
-  const clean = line.trim()
-  if (!clean || lines.includes(clean)) return lines
-  const next = [...lines, clean]
-  return next.length > 8 ? next.slice(next.length - 8) : next
+function copyFamily(family: FamilyMember[]): FamilyMember[] {
+  return family.map((member) => ({
+    ...member,
+    core: [...member.core],
+    learned: [...member.learned],
+    today: [...member.today],
+  }))
 }
 
 /** 先去忙。不推進時間。 */
@@ -398,9 +404,13 @@ export function leaveTalk(state: GameState): GameState {
 /** 頭上該亮驚嘆號的人。 */
 export function waitingAskers(state: GameState): string[] {
   if (state.screen !== 'play') return []
-  return storiesNow(state)
+  const ids = storiesNow(state)
     .map((story) => story.askerId)
     .filter((id): id is string => !!id)
+  for (const id of Object.keys(state.openers)) {
+    if (!ids.includes(id)) ids.push(id)
+  }
+  return ids
 }
 
 /** 人走進另一區。只改你站的地方，不推進時間。 */
@@ -430,25 +440,15 @@ function applyAction(state: GameState, action: PlayerAction): GameState {
       : { ...state, location: action.location, companionId: action.companionId ?? null }
   const witnesses = actionWitnesses(witnessState, action)
   const deltas: DeltaLine[] = []
-  let family = state.family.map((member) => ({ ...member, notes: [...member.notes] }))
+  let family = copyFamily(state.family)
 
-  if (action.suspicion) {
-    const spec = action.suspicion
+  if (action.seen) {
+    const seen = action.seen
     for (const witness of witnesses) {
-      const current = family.find((member) => member.id === witness.id)
-      if (!current) continue
-      const applied = scoreSuspicion({
-        amount: spec.amount,
-        topic: spec.topic,
-        weights: current.weights,
-        humanity: state.humanity,
-        familiarity: state.familiarity,
-        affection: current.affection,
-      })
-      family = mapMember(family, current.id, (member) =>
-        withSuspicion(member, applied, spec.amount < 0, spec.note, spec.topic, state.day),
-      )
-      deltas.push({ label: `${current.role} 懷疑`, value: applied })
+      family = mapMember(family, witness.id, (member) => ({
+        ...member,
+        today: perceive(member.today, { day: state.day, kind: 'saw', text: seen }),
+      }))
     }
   }
 
@@ -514,7 +514,6 @@ function applyAction(state: GameState, action: PlayerAction): GameState {
 
 function actionWitnesses(state: GameState, action: PlayerAction): FamilyMember[] {
   const present = state.family.filter((member) => memberIsPresent(member, state))
-  if (!action.suspicion) return present
   if (action.targetId) return present.filter((member) => member.id === action.targetId)
   return present
 }
@@ -527,42 +526,7 @@ function presentIn(state: GameState, id: string): boolean {
 function applyChoice(state: GameState, choice: EventChoice): GameState {
   const event = state.pendingEvent
   const deltas: DeltaLine[] = []
-  let family = state.family.map((member) => ({ ...member, notes: [...member.notes] }))
-  if (event?.askerId) {
-    const asker = family.find((member) => member.id === event.askerId)
-    if (asker) {
-      const applied = scoreSuspicion({
-        amount: choice.suspicion,
-        topic: choice.topic,
-        weights: asker.weights,
-        humanity: state.humanity,
-        familiarity: state.familiarity,
-        affection: asker.affection,
-        metaLeak: choice.metaLeak,
-      })
-      family = mapMember(family, asker.id, (member) =>
-        withSuspicion(member, applied, applied < 0, choice.note, choice.topic, state.day),
-      )
-      deltas.push({ label: `${asker.role} 懷疑`, value: applied })
-      if (choice.affection) {
-        family = mapMember(family, asker.id, (member) => ({
-          ...member,
-          affection: clamp(member.affection + (choice.affection ?? 0), 0, 100),
-        }))
-        deltas.push({ label: `${asker.role} 親近`, value: choice.affection })
-      }
-      for (const hear of audienceFor(state, event.askerId)) {
-        if (hear.direct) continue
-        const heard = overhearAmount(applied, asker.weights[choice.topic], hear.member.weights[choice.topic])
-        if (heard === 0) continue
-        const overheard = choice.note ? `旁聽：${choice.note}` : undefined
-        family = mapMember(family, hear.member.id, (member) =>
-          withSuspicion(member, heard, heard < 0, overheard, choice.topic, state.day),
-        )
-        deltas.push({ label: `${hear.member.role} 旁聽`, value: heard })
-      }
-    }
-  }
+  const family = copyFamily(state.family)
 
   const humanity = clamp(state.humanity + (choice.humanity ?? 0), 0, 100)
   const familiarity = clamp(state.familiarity + (choice.familiarity ?? 0), 0, 100)
@@ -594,27 +558,12 @@ function applyChoice(state: GameState, choice: EventChoice): GameState {
   }
 }
 
-function withSuspicion(
-  member: FamilyMember,
-  applied: number,
-  reassure: boolean,
-  note: string | undefined,
-  topic: MemoryNote['topic'],
-  day: number,
-): FamilyMember {
-  const notes =
-    note && applied > 0 ? pushNote(member.notes, { day, topic, text: note }) : member.notes
+function shiftSuspicion(member: FamilyMember, applied: number): FamilyMember {
   return {
     ...member,
     suspicion: clamp(member.suspicion + applied, 0, 100),
-    reassuredToday: member.reassuredToday || (reassure && applied < 0),
-    notes,
+    reassuredToday: member.reassuredToday || applied < 0,
   }
-}
-
-function pushNote(notes: MemoryNote[], note: MemoryNote): MemoryNote[] {
-  const next = [...notes, note]
-  return next.length > 4 ? next.slice(next.length - 4) : next
 }
 
 function mapMember(
@@ -625,63 +574,78 @@ function mapMember(
   return family.map((member) => (member.id === id ? update(member) : member))
 }
 
-function buildNight(state: GameState): GameState {
-  let family = state.family.map((member) => ({ ...member, notes: [...member.notes] }))
+export function nightRequests(state: GameState): NightRequest[] {
+  return state.family.map((member) => ({
+    id: member.id,
+    name: member.name,
+    role: member.role,
+    trait: member.trait,
+    suspicion: member.suspicion,
+    day: state.day,
+    core: member.core,
+    learned: member.learned.map((item) => item.text),
+    today: member.today,
+    others: state.family
+      .filter((other) => other.id !== member.id)
+      .map((other) => ({ id: other.id, name: other.name, role: other.role })),
+  }))
+}
+
+function offlineNights(state: GameState): NightJudgment[] {
+  return nightRequests(state).map((request) => nightOffline(request))
+}
+
+/**
+ * 套用夜談結果。
+ * 學到的記憶留下，今天的見聞清掉，轉述寫進對方的新一天。
+ * 懷疑值用模型給的變化量，不再乘比例。
+ */
+export function settleNight(state: GameState, judgments: NightJudgment[]): GameState {
+  let family = copyFamily(state.family)
+  const openers = { ...state.openers }
   const lines: { speaker: string; text: string }[] = []
   const deltas: DeltaLine[] = []
 
-  const driftId = pickDriftTarget(family)
-  if (driftId) {
-    family = mapMember(family, driftId, (member) => ({
-      ...member,
-      suspicion: clamp(member.suspicion + DRIFT, 0, 100),
-    }))
-    const who = family.find((member) => member.id === driftId)!
+  for (const judgment of judgments) {
+    const who = family.find((member) => member.id === judgment.id)
+    if (!who) continue
+    const delta = clampDelta(judgment.suspicion)
+    family = mapMember(family, who.id, (member) => {
+      let next = shiftSuspicion(member, delta)
+      for (const text of judgment.learned.slice(0, 2)) {
+        next = { ...next, learned: remember(next.learned, { day: state.day, kind: 'said', text }) }
+      }
+      return next
+    })
+    if (delta !== 0) deltas.push({ label: `${who.role} 懷疑`, value: delta })
+    if (judgment.opener) openers[who.id] = judgment.opener
+    const kept = judgment.learned[0]
     lines.push({
       speaker: who.role,
-      text: `${who.name}今天沒有被安撫。空白被記成了「有事」。`,
+      text: kept ? `${who.name}把今天收成一句：「${kept}。」` : `${who.name}今晚沒有新的句子。`,
     })
-    deltas.push({ label: `${who.role} 懷疑`, value: DRIFT })
-    gameLog.info(`夜間漂移 ${who.id} +${DRIFT}`)
-  } else {
-    lines.push({ speaker: '家裡', text: '今晚沒有人把空白當成證據。' })
+    gameLog.info(`夜談 ${who.id} 懷疑 ${delta}`)
   }
 
-  const ranked = [...family].sort(
-    (a, b) => b.suspicion - b.suspicionAtDawn - (a.suspicion - a.suspicionAtDawn),
-  )
-  const speaker = ranked[0]
-  const gain = speaker ? speaker.suspicion - speaker.suspicionAtDawn : 0
-  if (speaker && gain >= SHARE_GAIN_MIN) {
-    const todayNotes = speaker.notes.filter((note) => note.day === state.day)
-    const topic = todayNotes.at(-1)?.topic ?? 'emotion'
-    const noteText = todayNotes.at(-1)?.text
-    const candidates = family.filter(
-      (member) => member.id !== speaker.id && !member.notes.some((note) => note.day === state.day),
-    )
-    const listener = [...candidates].sort((a, b) => b.weights[topic] - a.weights[topic])[0]
-    if (listener) {
-      const transfer = Math.max(1, Math.round(gain * SHARE_RATIO))
-      family = mapMember(family, listener.id, (member) => ({
-        ...member,
-        suspicion: clamp(member.suspicion + transfer, 0, 100),
-        notes: noteText
-          ? pushNote(member.notes, { day: state.day, topic, text: `聽${speaker.role}說：${noteText}` })
-          : member.notes,
-      }))
-      lines.push({
-        speaker: speaker.role,
-        text: noteText
-          ? `${speaker.name}壓低聲音跟${listener.name}說：「${noteText}。」`
-          : `${speaker.name}把今天的不對勁告訴了${listener.name}。`,
-      })
-      deltas.push({ label: `${listener.role} 懷疑`, value: transfer })
-      gameLog.warn(`夜間交換 ${speaker.id} -> ${listener.id} +${transfer}`)
-    } else {
-      lines.push({ speaker: '夜裡', text: '白天在場的人都聽到了。夜裡沒有新的情報。' })
-    }
-  } else {
-    lines.push({ speaker: '夜裡', text: '沒有人交換筆記。路上那些人當然也不會。' })
+  family = family.map((member) => ({ ...member, today: [] as MemoryItem[] }))
+  for (const judgment of judgments) {
+    if (!judgment.tellTo || !judgment.tellLine) continue
+    const from = family.find((member) => member.id === judgment.id)
+    const target = family.find((member) => member.id === judgment.tellTo)
+    if (!from || !target) continue
+    const text = `${from.role}告訴你：${judgment.tellLine}`
+    family = mapMember(family, target.id, (member) => ({
+      ...member,
+      today: perceive(member.today, { day: state.day, kind: 'told', text }),
+    }))
+    lines.push({
+      speaker: from.role,
+      text: `${from.name}壓低聲音跟${target.name}說：「${judgment.tellLine}。」`,
+    })
+    gameLog.warn(`夜間轉述 ${from.id} -> ${target.id}`)
+  }
+  if (!lines.some((line) => line.text.includes('壓低聲音'))) {
+    lines.push({ speaker: '夜裡', text: '沒有人把今天的句子說給另一個人聽。' })
   }
 
   const ending = nightEnding(state.day, state.maxDays, family)
@@ -690,6 +654,7 @@ function buildNight(state: GameState): GameState {
   return {
     ...state,
     family,
+    openers,
     screen: 'night',
     night: { lines, deltas, ending },
     pendingEvent: null,
@@ -761,14 +726,8 @@ export function sceneCaption(state: GameState): string {
   if (state.location === 'school') return '街對面的書塾。妹妹若在，這裡只有她聽得見。'
   if (state.location === 'street') return '街上人很多。他們不會學習。家人要在同一層才聽得見。'
   if (state.phase === 'night') return '三樓的燈還亮著。筆記通常在你睡了之後才會合體。'
-  if (state.phase === 'morning') return '白天。媽媽在一樓，爸爸在二樓，妹妹在書塾。沒有人在倒數，睡了才算一天。'
+  if (state.phase === 'morning') return '白天。媽媽在一樓，爸爸在二樓，妹妹在書塾。收了店，傍晚才回三樓。'
   if (state.phase === 'afternoon') return '下午人少。不帶妹妹出門的話，沒有觀察者跟去。'
   return '傍晚客廳是滿的。一句話會被三個人聽見。'
 }
 
-export function moodFromSuspicion(suspicion: number): 'ok' | 'watch' | 'worry' | 'mad' {
-  if (suspicion >= 75) return 'mad'
-  if (suspicion >= 50) return 'worry'
-  if (suspicion >= 30) return 'watch'
-  return 'ok'
-}

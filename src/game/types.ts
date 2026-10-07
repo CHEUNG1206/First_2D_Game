@@ -9,29 +9,30 @@ export type Screen = 'title' | 'intro' | 'play' | 'event' | 'night' | 'ending'
 
 export type EndingId = 'survived' | 'uneasy' | 'exposed' | 'meeting' | 'confessed'
 
-export interface MemoryNote {
+/** 家人今天看見、聽見，或夜裡被轉告的一件事。 */
+export interface MemoryItem {
   day: number
-  topic: Topic
+  kind: 'heard' | 'saw' | 'said' | 'told'
   text: string
 }
 
-/** 會學習的家人。懷疑、筆記、權重都只存在這裡。 */
+/**
+ * 會學習的家人。
+ * core 是寫好的設定，永遠不刪。learned 是模型決定留下的事。today 是今天的見聞，夜裡整理完就清掉。
+ */
 export interface FamilyMember {
   id: string
   name: string
   role: string
   trait: string
   color: string
-  weights: Record<Topic, number>
   suspicion: number
   affection: number
   /** 週一到週六在家的時段。週日由在場判斷另外處理。 */
   homePhases: Phase[]
-  notes: MemoryNote[]
-  /** 這個人本來就知道的事。跨過今晚還在。 */
-  longTerm: string[]
-  /** 今天親耳聽到的話。天亮就清掉。 */
-  shortTerm: string[]
+  core: string[]
+  learned: MemoryItem[]
+  today: MemoryItem[]
   suspicionAtDawn: number
   reassuredToday: boolean
 }
@@ -87,6 +88,8 @@ export interface GameEvent {
   badge: string
   prompt: string
   inner: string
+  /** talk 用鍵盤。confess 用按鈕，不進模型。 */
+  kind: 'talk' | 'confess'
   choices: EventChoice[]
 }
 
@@ -124,6 +127,8 @@ export interface GameState {
   log: LogEntry[]
   flags: Record<string, boolean>
   seenEvents: string[]
+  /** 夜裡模型為每個人寫好的下一句開場。說出口之後清掉。 */
+  openers: Record<string, string>
   pendingEvent: GameEvent | null
   eventAdvances: boolean
   banner: Banner | null
@@ -145,8 +150,9 @@ export interface PlayerAction {
   familiarity?: number
   affection?: Partial<Record<string, number>>
   affectionAll?: number
-  suspicion?: { amount: number; topic: Topic; note?: string }
-  /** 有指定時，只有這位在場的家人吃到懷疑變化。 */
+  /** 在場的家人會把這句話記進今天的見聞。懷疑留給模型。 */
+  seen?: string
+  /** 有指定時，只有這位在場的家人看見。 */
   targetId?: string
   /** 出門這個動作本身被家裡的人看見。 */
   observedAt?: 'home' | 'destination'
@@ -186,8 +192,9 @@ export interface MemoryListener {
   role: string
   trait: string
   suspicion: number
-  longTerm: string[]
-  shortTerm: string[]
+  core: string[]
+  learned: string[]
+  today: string[]
 }
 
 /** 模型聽完之後，給這個人的懷疑變化和要留下的長期記憶。 */
@@ -207,9 +214,10 @@ export interface SpeechRequest {
   playerText: string
   history: SpeechTurn[]
   suspicion: number
-  notes: string[]
-  longTerm?: string[]
-  shortTerm?: string[]
+  core: string[]
+  /** 已經挑過、跟這句話有關的學到的記憶。 */
+  learned: string[]
+  today: string[]
   others?: MemoryListener[]
   day: number
 }
@@ -232,5 +240,30 @@ export interface SpeechJudgment {
   humanity: number
   affection: number
   ending?: EndingId
+  provider: 'ollama' | 'grok' | 'offline'
+}
+
+/** 送給夜談的一位家人。 */
+export interface NightRequest {
+  id: string
+  name: string
+  role: string
+  trait: string
+  suspicion: number
+  day: number
+  core: string[]
+  learned: string[]
+  today: MemoryItem[]
+  others: { id: string; name: string; role: string }[]
+}
+
+/** 模型把一天整理完之後的決定。suspicion 是變化量。 */
+export interface NightJudgment {
+  id: string
+  suspicion: number
+  learned: string[]
+  tellTo?: string
+  tellLine?: string
+  opener?: string
   provider: 'ollama' | 'grok' | 'offline'
 }

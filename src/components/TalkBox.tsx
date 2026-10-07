@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { askFamily } from '../game/ask.ts'
 import { audienceFor } from '../game/family.ts'
+import { recall } from '../game/memory.ts'
 import type { GameEvent, GameState, SpeechJudgment, SpeechTurn } from '../game/types.ts'
 import { PixelFace } from './PixelFace.tsx'
 
@@ -18,14 +19,16 @@ export function TalkBox({
   state,
   onSpoken,
   onLeave,
+  onChoice,
 }: {
   state: GameState
   onSpoken: (judgment: SpeechJudgment) => void
   onLeave: () => void
+  onChoice: (id: string) => void
 }) {
   const event = state.pendingEvent
   if (!event) return null
-  return <TalkSession key={event.id} state={state} scene={event} onSpoken={onSpoken} onLeave={onLeave} />
+  return <TalkSession key={event.id} state={state} scene={event} onSpoken={onSpoken} onLeave={onLeave} onChoice={onChoice} />
 }
 
 function TalkSession({
@@ -33,17 +36,20 @@ function TalkSession({
   scene,
   onSpoken,
   onLeave,
+  onChoice,
 }: {
   state: GameState
   scene: GameEvent
   onSpoken: (judgment: SpeechJudgment) => void
   onLeave: () => void
+  onChoice: (id: string) => void
 }) {
   const [text, setText] = useState('')
   const [lines, setLines] = useState<SpeechTurn[]>([])
   const [busy, setBusy] = useState(false)
   const [provider, setProvider] = useState<SpeechJudgment['provider'] | null>(null)
   const [failed, setFailed] = useState(false)
+  const [waited, setWaited] = useState(0)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const logRef = useRef<HTMLDivElement>(null)
   const member = state.family.find((item) => item.id === scene.askerId)
@@ -53,12 +59,18 @@ function TalkSession({
     node.scrollTop = node.scrollHeight
   }, [lines])
   const audience = audienceFor(state, scene.askerId)
+  useEffect(() => {
+    if (!busy) return
+    const timer = window.setInterval(() => setWaited((seconds) => seconds + 1), 1000)
+    return () => window.clearInterval(timer)
+  }, [busy])
 
   async function send() {
     const playerText = text.trim()
     if (!playerText || busy) return
     setBusy(true)
     setFailed(false)
+    setWaited(0)
     setText('')
     try {
       const judgment = await askFamily({
@@ -70,9 +82,9 @@ function TalkSession({
         playerText,
         history: lines,
         suspicion: member?.suspicion ?? 0,
-        notes: member?.notes.map((note) => note.text) ?? [],
-        longTerm: member?.longTerm ?? [],
-        shortTerm: member?.shortTerm ?? [],
+        core: member?.core ?? [],
+        learned: recall(member?.learned ?? [], playerText),
+        today: member?.today.map((item) => item.text) ?? [],
         others: audience
           .filter((item) => !item.direct)
           .map((item) => ({
@@ -81,8 +93,9 @@ function TalkSession({
             role: item.member.role,
             trait: item.member.trait,
             suspicion: item.member.suspicion,
-            longTerm: item.member.longTerm,
-            shortTerm: item.member.shortTerm,
+            core: item.member.core,
+            learned: recall(item.member.learned, playerText),
+            today: item.member.today.map((line) => line.text),
           })),
         day: state.day,
       })
@@ -100,6 +113,29 @@ function TalkSession({
       setBusy(false)
       inputRef.current?.focus()
     }
+  }
+
+  if (scene.kind === 'confess') {
+    return (
+      <section className="talk-dock" role="dialog" aria-modal="true" aria-labelledby="talk-title">
+        <div className="talk-portrait">
+          <PixelFace id="self" />
+          <p className="badge">{scene.badge}</p>
+        </div>
+        <div className="talk-body">
+          <h2 id="talk-title">你 · {scene.speakerName}</h2>
+          <p className="prompt">{scene.prompt}</p>
+          <div className="talk-actions">
+            {scene.choices.map((choice) => (
+              <button key={choice.id} type="button" className={choice.ending ? 'primary danger' : 'primary'} onClick={() => onChoice(choice.id)}>
+                {choice.text}
+              </button>
+            ))}
+          </div>
+          <p className="talk-hint">{scene.inner}</p>
+        </div>
+      </section>
+    )
   }
 
   return (
@@ -155,7 +191,7 @@ function TalkSession({
           />
           <div className="talk-actions">
             <button type="submit" className="primary" disabled={busy || text.trim().length === 0}>
-              {busy ? '在聽…' : '說出口'}
+              {busy ? `在聽… ${waited} 秒` : '說出口'}
             </button>
             <button type="button" className="text-btn" onClick={onLeave} disabled={busy}>
               先去忙
@@ -166,7 +202,7 @@ function TalkSession({
           {failed
             ? '這句沒送成，再試一次。'
             : provider === 'offline'
-              ? '離線判斷。接上本機 Qwen 或 Grok 之後，會改由模型回答。'
+              ? '模型沒接上，這句改用離線判斷。'
               : scene.inner}
         </p>
       </div>

@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test": "vitest run",
+    "eval:brain": "node scripts/eval-brain.mjs",
     "preview": "vite preview --host 0.0.0.0 --port 47321 --strictPort"
   },
   "dependencies": {

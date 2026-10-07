@@ -1,16 +1,21 @@
-import { useReducer, useState } from 'react'
+import { useEffect, useReducer, useState } from 'react'
 import { blip } from './game/audio.ts'
+import { askNight } from './game/ask.ts'
 import {
   acknowledgeNight,
   applySpeech,
   beginWeek,
   chooseAction,
+  chooseChoice,
   createInitialState,
   leaveTalk,
+  prepareSleep,
+  settleNight,
   talkTo,
   visit,
 } from './game/engine.ts'
-import type { GameState, LocationId, SpeechJudgment } from './game/types.ts'
+import { clearSave, loadGame, saveGame } from './game/save.ts'
+import type { GameState, LocationId, NightJudgment, SpeechJudgment } from './game/types.ts'
 import { Banner, Hud, Monitor } from './components/PlayView.tsx'
 import { TalkBox } from './components/TalkBox.tsx'
 import { World } from './world/World.tsx'
@@ -23,8 +28,11 @@ type Act =
   | { type: 'talk'; id: string }
   | { type: 'visit'; location: LocationId }
   | { type: 'speech'; judgment: SpeechJudgment }
+  | { type: 'choice'; id: string }
   | { type: 'leave' }
   | { type: 'night' }
+  | { type: 'settle'; nights: NightJudgment[] }
+  | { type: 'continue'; state: GameState }
   | { type: 'restart' }
 
 function reducer(state: GameState, action: Act): GameState {
@@ -42,10 +50,19 @@ function reducer(state: GameState, action: Act): GameState {
       return visit(state, action.location)
     case 'speech':
       return applySpeech(state, action.judgment)
+    case 'choice':
+      return chooseChoice(state, action.id)
     case 'leave':
       return leaveTalk(state)
     case 'night':
       return acknowledgeNight(state)
+    case 'settle': {
+      const slept = prepareSleep(state)
+      if (!slept) return state
+      return settleNight(slept, action.nights)
+    }
+    case 'continue':
+      return action.state
     case 'restart':
       return createInitialState()
     default:
@@ -58,6 +75,17 @@ export default function App() {
   const [rulesOpen, setRulesOpen] = useState(false)
   const [familyOpen, setFamilyOpen] = useState(false)
   const [soundOn, setSoundOn] = useState(true)
+  const [settling, setSettling] = useState(false)
+  const hasSave = state.screen === 'title' && loadGame() !== null
+
+  useEffect(() => {
+    if (state.screen === 'ending') {
+      clearSave()
+      return
+    }
+    if (state.screen === 'title') return
+    saveGame(state)
+  }, [state])
 
   function play(kind: 'ui' | 'good' | 'bad' | 'night') {
     if (soundOn) blip(kind)
@@ -85,9 +113,17 @@ export default function App() {
 
         {state.screen === 'title' && (
           <TitleScreen
+            hasSave={hasSave}
             onStart={() => {
               play('ui')
+              clearSave()
               dispatch({ type: 'start' })
+            }}
+            onContinue={() => {
+              const saved = loadGame()
+              if (!saved) return
+              play('ui')
+              dispatch({ type: 'continue', state: saved })
             }}
             onRules={() => setRulesOpen(true)}
           />
@@ -108,9 +144,19 @@ export default function App() {
             <div className="scene-column">
               <World
                 state={state}
-                locked={state.screen !== 'play' || rulesOpen}
+                locked={state.screen !== 'play' || rulesOpen || settling}
                 onAction={(id) => {
                   play('ui')
+                  if (id === 'sleep') {
+                    if (!prepareSleep(state)) return
+                    setSettling(true)
+                    void askNight(state).then((nights) => {
+                      dispatch({ type: 'settle', nights })
+                      setSettling(false)
+                      play('night')
+                    })
+                    return
+                  }
                   dispatch({ type: 'act', id })
                 }}
                 onTalk={(id) => {
@@ -137,7 +183,19 @@ export default function App() {
               play('ui')
               dispatch({ type: 'leave' })
             }}
+            onChoice={(id) => {
+              play('ui')
+              dispatch({ type: 'choice', id })
+            }}
           />
+        )}
+
+        {settling && (
+          <section className="night-screen">
+            <p className="eyebrow">夜裡</p>
+            <h1>他們在交換</h1>
+            <p className="lede">你睡著之後，每個人把自己今天看見的事整理一遍。</p>
+          </section>
         )}
 
         {state.screen === 'night' && (

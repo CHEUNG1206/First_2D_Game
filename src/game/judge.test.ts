@@ -12,7 +12,9 @@ function ask(playerText: string, speakerId = 'mom'): SpeechRequest {
     playerText,
     history: [],
     suspicion: 16,
-    notes: [],
+    core: ['你吃早餐會嫌蛋，而且嫌得很具體。'],
+    learned: [],
+    today: [],
     day: 1,
   }
 }

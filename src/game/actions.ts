@@ -2,10 +2,9 @@ import { findMember, memberIsPresent } from './family.ts'
 import type { GameState, PlayerAction } from './types.ts'
 
 /**
- * 白天的動詞。做完不會把時鐘往前推，同一件事一天只算一次。
- * 懷疑只打在聽得見的人身上；targetId 把效果收成一個人，
- * 這樣看電視不會順便安撫全家人。
- * 說出兩個秘密是用鍵盤講的，不放在床邊的按鈕裡。
+ * 白天收店之前的動詞，和傍晚回三樓之後的動詞。
+ * 做完不會把時鐘往前推，同一件事一天只算一次。
+ * 按鈕只把「有人看見」寫進今天的見聞，不改懷疑。懷疑留給模型。
  */
 
 function momSees(state: GameState): boolean {
@@ -23,7 +22,7 @@ export const ACTIONS: PlayerAction[] = [
     energy: -8,
     humanity: 2,
     affection: { mom: 4 },
-    suspicion: { amount: -4, topic: 'sensory' },
+    seen: '你把蛋黃戳破，又嫌蛋白煎太老。',
     targetId: 'mom',
     requiresPresent: 'mom',
     result: '你把蛋黃戳破，又說蛋白煎太老。媽媽哼了一聲，把盤子往你這邊推。',
@@ -35,7 +34,7 @@ export const ACTIONS: PlayerAction[] = [
     phases: ['morning'],
     location: 'home',
     energy: -6,
-    suspicion: { amount: 6, topic: 'routine', note: '沒有坐下來一起吃早餐' },
+    seen: '你沒有坐下來，站著把早餐吃完。',
     result: (state) =>
       momSees(state)
         ? '你站著吃完。媽媽看了你的背影一眼，沒有叫你，但那一頁今天已經寫上了。'
@@ -60,6 +59,7 @@ export const ACTIONS: PlayerAction[] = [
     energy: -10,
     pocket: -15,
     minPocket: 15,
+    seen: '你看著常客把同一句話又說了一次。',
     result: '常客又說了一次老樣子。句子和上一輪接不起來。',
   },
   {
@@ -72,7 +72,7 @@ export const ACTIONS: PlayerAction[] = [
     pocket: 18,
     humanity: 1,
     affection: { mom: 3 },
-    suspicion: { amount: -2, topic: 'routine' },
+    seen: '你招呼了酒客，袖口都濕了。',
     targetId: 'mom',
     result: '你把壺放穩，又嫌這桌太吵。常客還是說老樣子。媽媽看你袖口濕了，沒把這筆記成怪。',
   },
@@ -87,6 +87,7 @@ export const ACTIONS: PlayerAction[] = [
     minPocket: 30,
     absentFlag: 'hasPudding',
     setFlags: ['hasPudding'],
+    seen: '你買了一壺桂花甜湯。',
     result: '你把甜湯扣上蓋。常客又說了一次老樣子，像第一次看見這壺。',
   },
   {
@@ -97,7 +98,8 @@ export const ACTIONS: PlayerAction[] = [
     location: 'park',
     energy: -12,
     humanity: 2,
-    result: '農人又說今天天氣不錯。茶寮把同一壺茶續上。兩件事都沒有懷疑值。',
+    seen: '你去茶寮坐了一下。',
+    result: '農人又說今天天氣不錯。茶寮把同一壺茶續上。沒有會學習的人在聽。',
   },
   {
     id: 'with_sister',
@@ -109,7 +111,7 @@ export const ACTIONS: PlayerAction[] = [
     energy: -12,
     humanity: 2,
     affection: { sister: 6 },
-    suspicion: { amount: -4, topic: 'play' },
+    seen: '你跟妹妹搶話，一起嫌這題很蠢。',
     targetId: 'sister',
     companionId: 'sister',
     requiresPresent: 'sister',
@@ -123,7 +125,7 @@ export const ACTIONS: PlayerAction[] = [
     location: 'home',
     energy: -12,
     affection: { mom: 5 },
-    suspicion: { amount: -3, topic: 'routine' },
+    seen: '你洗了碗，手上是濕的。',
     targetId: 'mom',
     result: (state) =>
       momSees(state)
@@ -134,23 +136,24 @@ export const ACTIONS: PlayerAction[] = [
     id: 'dinner',
     label: '一起吃晚飯',
     detail: '把日子往前推。親近會加，但這不算安撫。',
-    phases: ['morning'],
+    phases: ['evening'],
     location: 'home',
     energy: -8,
     humanity: 1,
     affectionAll: 2,
+    seen: '你坐下來一起吃了晚飯。',
     result: '菜夾來夾去。沒有人問大問題。這頓飯讓大家比較喜歡你，還沒有比較相信你。',
   },
   {
     id: 'tv',
     label: '看電視罵結局',
     detail: '對爛結局真心生氣。妹妹把這當成人味。',
-    phases: ['morning'],
+    phases: ['evening'],
     location: 'home',
     energy: -8,
     humanity: 3,
     affection: { sister: 4 },
-    suspicion: { amount: -4, topic: 'play' },
+    seen: '你對爛結局真的生氣。',
     targetId: 'sister',
     result: '你對一個很爛的結局真的生氣了。妹妹說你幼稚。在這個家，那句話是誇獎。',
   },
@@ -158,11 +161,11 @@ export const ACTIONS: PlayerAction[] = [
     id: 'dishes',
     label: '幫忙洗碗',
     detail: '媽媽在的時候，這是作息上的安撫。',
-    phases: ['morning'],
+    phases: ['evening'],
     location: 'home',
     energy: -10,
     affection: { mom: 4 },
-    suspicion: { amount: -3, topic: 'routine' },
+    seen: '你幫忙洗碗，還抱怨水太燙。',
     targetId: 'mom',
     result: '你洗碗洗到袖子濕掉，還抱怨水太燙。媽媽把乾淨的那條毛巾扔過來。',
   },
@@ -175,7 +178,7 @@ export const ACTIONS: PlayerAction[] = [
     energy: -2,
     humanity: 1,
     affection: { mom: 8 },
-    suspicion: { amount: -6, topic: 'sensory' },
+    seen: '你把甜湯推給媽媽，說好像是送的。',
     targetId: 'mom',
     requiresPresent: 'mom',
     requiresFlag: 'hasPudding',
@@ -186,10 +189,10 @@ export const ACTIONS: PlayerAction[] = [
     id: 'walk_out',
     label: '晚飯時間出門',
     detail: '客廳裡的人會看見你離開。',
-    phases: ['morning'],
+    phases: ['evening'],
     location: 'park',
     energy: -12,
-    suspicion: { amount: 7, topic: 'routine', note: '晚飯時間一聲不吭走出門' },
+    seen: '你在晚飯時間一聲不吭走出門。',
     observedAt: 'home',
     result: '你出門的時候背後有筷子放下的聲音。公園很安靜，家裡的筆記不安靜。',
   },
@@ -197,7 +200,7 @@ export const ACTIONS: PlayerAction[] = [
     id: 'sleep',
     label: '去睡覺',
     detail: '結束今天。夜裡他們才會交換筆記。',
-    phases: ['morning', 'afternoon', 'evening', 'night'],
+    phases: ['evening'],
     location: 'home',
     energy: 54,
     humanity: 1,
@@ -218,11 +221,11 @@ export const ACTIONS: PlayerAction[] = [
     id: 'doze',
     label: '撐不住，瞇一下',
     detail: '看起來像當機。在場的人會記。',
-    phases: ['morning', 'afternoon', 'evening', 'night'],
+    phases: ['morning', 'evening'],
     location: 'home',
     energy: 28,
     humanity: -2,
-    suspicion: { amount: 9, topic: 'emotion', note: '突然睡死，怎麼叫都不醒' },
+    seen: '你突然睡死，叫了兩秒才睜眼。',
     observedAt: 'home',
     maxEnergy: 34,
     result: '你中途斷線。有人叫你的時候，你晚了兩秒才把眼睛打開。',
@@ -231,13 +234,27 @@ export const ACTIONS: PlayerAction[] = [
     id: 'confess',
     label: '說出真相',
     detail: '告訴他們你是誰，以及這個家是什麼。',
-    phases: ['night'],
+    phases: ['evening'],
     location: 'home',
     energy: 0,
     confess: true,
     result: '你站在客廳燈下面。',
   },
 ]
+
+export const CLOSE_SHOP: PlayerAction = {
+  id: 'close_shop',
+  label: '收店',
+  detail: '打烊。傍晚全家回到三樓。',
+  phases: ['morning'],
+  location: 'store',
+  energy: -4,
+  humanity: 1,
+  seen: '你把店收了，燈一盞盞關掉。',
+  result: '大堂的燈滅了。街上還有人，家裡的人往三樓走。',
+}
+
+ACTIONS.push(CLOSE_SHOP)
 
 export function actionById(id: string): PlayerAction | undefined {
   return ACTIONS.find((action) => action.id === id)

@@ -174,7 +174,7 @@ function buildUpper(kind: 'office' | 'home'): Tile[][] {
 export const GRIDS: Tile[][][] = [buildStreet(), buildUpper('office'), buildUpper('home')]
 
 export const HOTSPOTS: Hotspot[] = [
-  { id: 'counter', x: 18, y: 7, floor: 0, label: '櫃檯', actions: ['serve', 'store_tea', 'store_pudding'] },
+  { id: 'counter', x: 18, y: 7, floor: 0, label: '櫃檯', actions: ['serve', 'store_tea', 'store_pudding', 'close_shop'] },
   { id: 'hall_table', x: 22, y: 10, floor: 0, label: '大堂餐桌', actions: ['breakfast', 'give_pudding'] },
   { id: 'stair_hall', x: 31, y: 14, floor: 0, label: '上二樓', actions: [], stair: 1 },
   { id: 'desk', x: 22, y: 10, floor: 1, label: '帳桌', actions: [] },

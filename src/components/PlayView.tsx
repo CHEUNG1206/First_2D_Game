@@ -1,6 +1,6 @@
-import { availableActions, dayLabel, objectiveText, PHASE_LABEL, sceneCaption } from '../game/engine.ts'
-import { audienceFor, memberIsPresent } from '../game/family.ts'
-import type { ActionOffer, GameState } from '../game/types.ts'
+import { dayLabel, objectiveText, PHASE_LABEL } from '../game/engine.ts'
+import { memberIsPresent } from '../game/family.ts'
+import type { GameState } from '../game/types.ts'
 import { PixelFace } from './PixelFace.tsx'
 
 function Bar({
@@ -78,51 +78,6 @@ export function Hud({
   )
 }
 
-export function Stage({ state }: { state: GameState }) {
-  const present = state.family.filter((member) => memberIsPresent(member, state))
-  return (
-    <section className={`scene scene-${state.location} phase-${state.phase}`} aria-label="現在的場景">
-      <div className="window" aria-hidden="true">
-        <div className="sky" />
-      </div>
-      <p className="caption">{sceneCaption(state)}</p>
-      <div className="cast">
-        <figure>
-          <PixelFace id="self" />
-          <figcaption>你</figcaption>
-        </figure>
-        {state.location === 'home' &&
-          present.map((member) => (
-            <figure key={member.id}>
-              <PixelFace id={member.id} />
-              <figcaption>{member.role}</figcaption>
-            </figure>
-          ))}
-        {state.location === 'store' && (
-          <figure className={state.npcs.find((npc) => npc.id === 'clerk')?.glitching ? 'glitch' : ''}>
-            <PixelFace id="clerk" />
-            <figcaption>
-              {state.npcs.find((npc) => npc.id === 'clerk')?.glitching ? '店員_03' : '店員'}
-            </figcaption>
-          </figure>
-        )}
-        {state.location === 'park' && (
-          <>
-            <figure className={state.npcs.find((npc) => npc.id === 'jogger')?.glitching ? 'glitch' : ''}>
-              <PixelFace id="jogger" />
-              <figcaption>路人</figcaption>
-            </figure>
-            <figure className="cat" aria-hidden="true">
-              <div className="cat-body" />
-              <figcaption>貓</figcaption>
-            </figure>
-          </>
-        )}
-      </div>
-    </section>
-  )
-}
-
 export function Monitor({ state }: { state: GameState }) {
   const hot = state.family.some((member) => member.suspicion >= 60)
   return (
@@ -146,8 +101,8 @@ export function Monitor({ state }: { state: GameState }) {
               </div>
               <Bar label="懷疑" value={member.suspicion} tone={suspicionTone(member.suspicion)} />
               <Bar label="親近" value={member.affection} tone="love" />
-              {member.notes.length > 0 && (
-                <p className="note">記住了：{member.notes[member.notes.length - 1]!.text}</p>
+              {member.learned.length > 0 && (
+                <p className="note">記住了：{member.learned[member.learned.length - 1]!.text}</p>
               )}
             </li>
           )
@@ -175,37 +130,6 @@ export function Monitor({ state }: { state: GameState }) {
   )
 }
 
-export function ActionBar({
-  state,
-  onAction,
-}: {
-  state: GameState
-  onAction: (id: string) => void
-}) {
-  const actions = availableActions(state).filter((action) => !action.hidden)
-  return (
-    <div className="actions" role="group" aria-label="這個時段可以做的事">
-      {actions.map((action) => (
-        <ActionButton key={action.id} action={action} onAction={onAction} />
-      ))}
-    </div>
-  )
-}
-
-function ActionButton({ action, onAction }: { action: ActionOffer; onAction: (id: string) => void }) {
-  return (
-    <button
-      type="button"
-      className={action.id === 'confess' ? 'action danger' : 'action'}
-      disabled={!action.enabled}
-      onClick={() => onAction(action.id)}
-    >
-      <strong>{action.label}</strong>
-      <span>{action.enabled ? action.detail : action.reason}</span>
-    </button>
-  )
-}
-
 export function Banner({ state }: { state: GameState }) {
   if (!state.banner) return null
   const bad = state.banner.deltas.some((delta) => delta.label.includes('懷疑') && delta.value > 0)
@@ -226,47 +150,3 @@ export function Banner({ state }: { state: GameState }) {
   )
 }
 
-export function EventDialog({
-  state,
-  onChoice,
-}: {
-  state: GameState
-  onChoice: (id: string) => void
-}) {
-  const event = state.pendingEvent
-  if (!event) return null
-  const audience = audienceFor(state, event.askerId)
-  return (
-    <div className="overlay">
-      <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="event-title">
-        <div className="dialog-head">
-          <PixelFace id={event.speakerId} />
-          <div>
-            <p className="badge">{event.badge}</p>
-            <h2 id="event-title">
-              {event.speakerRole} · {event.speakerName}
-            </h2>
-            <p className="event-name">{event.title}</p>
-          </div>
-        </div>
-        <p className="prompt">{event.prompt}</p>
-        <blockquote>
-          <span>只有你聽得見</span>
-          {event.inner}
-        </blockquote>
-        <p className="audience">
-          {audience.length === 0
-            ? '沒有家人聽得見。這句話不會被記下來。'
-            : `聽得見：${audience.map((item) => `${item.member.role}${item.direct ? '' : '（旁聽）'}`).join('、')}`}
-        </p>
-        <div className="choices">
-          {event.choices.map((choice) => (
-            <button key={choice.id} type="button" className="action" onClick={() => onChoice(choice.id)}>
-              {choice.text}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
